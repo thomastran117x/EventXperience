@@ -27,7 +27,7 @@
     <PackageReference Include="BCrypt.Net-Next" Version="4.2.0" />
     <PackageReference Include="Confluent.Kafka" Version="2.15.0" />
     <PackageReference Include="DotNetEnv" Version="3.2.0" />
-    <PackageReference Include="Elastic.Clients.Elasticsearch" Version="8.19.25" />
+    <PackageReference Include="Elastic.Clients.Elasticsearch" Version="8.19.26" />
     <PackageReference Include="Google.Apis.Auth" Version="1.76.0" />
     <PackageReference Include="MailKit" Version="4.17.0" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.11" />
@@ -51,7 +51,7 @@
     <PackageReference Include="StackExchange.Redis" Version="3.1.31" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.22.0" />
     <PackageReference Include="Azure.Storage.Blobs" Version="12.29.2" />
-    <PackageReference Include="Stripe.net" Version="52.4.0" />
+    <PackageReference Include="Stripe.net" Version="52.4.1" />
     <PackageReference Include="Otp.NET" Version="1.4.1" />
     <!-- EF Core 10 resolves SQLitePCLRaw 2.1.11, which has a high-severity advisory.
          Override it with the current bundle while retaining SQLite for in-memory tests. -->
