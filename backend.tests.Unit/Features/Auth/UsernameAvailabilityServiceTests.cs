@@ -21,7 +21,7 @@ public class UsernameAvailabilityServiceTests
         var repository = new Mock<IAuthUserRepository>();
         var service = CreateService(repository, BloomFilterLookup.DefinitelyAbsent);
 
-        var unavailable = await service.IsUnavailableAsync("ada", Now, UsernameLookupMode.Advisory);
+        var unavailable = await service.IsUnavailableAsync("ada", Now, AvailabilityLookupMode.Advisory);
 
         unavailable.Should().BeFalse();
         repository.Verify(
@@ -30,7 +30,7 @@ public class UsernameAvailabilityServiceTests
     }
 
     /// <summary>
-    /// The safety fix behind UsernameLookupMode. The local filter can lag a claim made on another
+    /// The safety fix behind AvailabilityLookupMode. The local filter can lag a claim made on another
     /// instance, so a path that is about to take the name must confirm against the database —
     /// otherwise a stale "free" turns a clean 409 into a unique-index violation and a 500.
     /// </summary>
@@ -41,7 +41,7 @@ public class UsernameAvailabilityServiceTests
         repository.Setup(r => r.UsernameUnavailableAsync("ada", Now)).ReturnsAsync(true);
         var service = CreateService(repository, BloomFilterLookup.DefinitelyAbsent);
 
-        var unavailable = await service.IsUnavailableAsync("ada", Now, UsernameLookupMode.Authoritative);
+        var unavailable = await service.IsUnavailableAsync("ada", Now, AvailabilityLookupMode.Authoritative);
 
         unavailable.Should().BeTrue();
         repository.Verify(r => r.UsernameUnavailableAsync("ada", Now), Times.Once);
@@ -106,7 +106,7 @@ public class UsernameAvailabilityServiceTests
         using var cancellation = new CancellationTokenSource();
         await cancellation.CancelAsync();
 
-        var act = () => service.IsUnavailableAsync("ada", Now, UsernameLookupMode.Advisory, cancellation.Token);
+        var act = () => service.IsUnavailableAsync("ada", Now, AvailabilityLookupMode.Advisory, cancellation.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
     }

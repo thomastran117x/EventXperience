@@ -154,7 +154,20 @@
                   placeholder="name@company.com"
                 />
               </div>
-              @if (submitted && form.controls['email'].invalid) {
+              @if (emailChecking()) {
+                <div class="mt-2 text-sm text-muted">Checking availability…</div>
+              } @else if (form.controls['email'].hasError('emailTaken')) {
+                <div class="mt-2 text-sm text-danger">
+                  That email is already registered.
+                  <a
+                    routerLink="/auth/login"
+                    class="font-semibold text-accent transition hover:text-content"
+                    >Sign in instead</a
+                  >
+                </div>
+              } @else if (emailAvailable()) {
+                <div class="mt-2 text-sm text-success">That email is available.</div>
+              } @else if (submitted && form.controls['email'].invalid) {
                 <div class="mt-2 text-sm text-danger">A valid email is required.</div>
               }
             </div>

@@ -35,6 +35,7 @@ namespace backend.main.features.auth
         private readonly ILoginStepUpChallengeService _loginStepUpChallengeService;
         private readonly IAuthSessionService _authSessionService;
         private readonly IUsernameAvailabilityService _usernameAvailability;
+        private readonly IEmailAvailabilityService _emailAvailability;
         private readonly SeedAccountBypassPolicy _seedBypass;
         private readonly ClientRequestInfo _requestInfo;
         private const string DummyHash = "$2a$11$9FJqO6j/4jP3E2fOQdWgMuKZXWWvPZ09f8Pj0L9VqB6TfqZ4fE5SO";
@@ -52,6 +53,7 @@ namespace backend.main.features.auth
             ILoginStepUpChallengeService loginStepUpChallengeService,
             IAuthSessionService authSessionService,
             IUsernameAvailabilityService usernameAvailability,
+            IEmailAvailabilityService emailAvailability,
             SeedAccountBypassPolicy seedBypass,
             ClientRequestInfo requestInfo
         )
@@ -67,6 +69,7 @@ namespace backend.main.features.auth
             _loginStepUpChallengeService = loginStepUpChallengeService;
             _authSessionService = authSessionService;
             _usernameAvailability = usernameAvailability;
+            _emailAvailability = emailAvailability;
             _seedBypass = seedBypass;
             _requestInfo = requestInfo;
         }
@@ -121,7 +124,17 @@ namespace backend.main.features.auth
             {
                 username = UsernamePolicy.NormalizeAndValidate(username);
 
-                if (await _userRepository.EmailExistsAsync(email))
+                // Only the lookup gets the lowercased form. The address carried forward keeps the
+                // casing the user typed, because it is the one we store and deliver mail to, and
+                // RFC 5321 leaves the local part case-sensitive to the destination host.
+                email = EmailPolicy.Sanitize(email);
+                var probeEmail = EmailPolicy.NormalizeAndValidate(email);
+
+                // Advisory: this method sends a verification mail, it does not create the account.
+                // The verify step below re-checks authoritatively before inserting, so a filter
+                // that has not yet seen a signup from another instance only defers the conflict
+                // rather than admitting a duplicate.
+                if (await _emailAvailability.IsRegisteredAsync(probeEmail, AvailabilityLookupMode.Advisory))
                     throw new ConflictException($"An account is already registered with the email: {email}");
                 if (await _usernameAvailability.IsUnavailableAsync(username, DateTime.UtcNow))
                     throw new UsernameTakenException(username);
@@ -168,7 +181,11 @@ namespace backend.main.features.auth
                     VerificationPurpose.SignUp
                 );
 
-                if (await _userRepository.EmailExistsAsync(user.Email))
+                user.Email = EmailPolicy.Sanitize(user.Email);
+                var probeEmail = EmailPolicy.Normalize(user.Email);
+                // Authoritative: CreateUserAsync is a few lines away, so a stale "absent" here
+                // would turn a clean 409 into a unique-index violation surfacing as a 500.
+                if (await _emailAvailability.IsRegisteredAsync(probeEmail))
                     throw new ConflictException($"An account is already registered with the email: {user.Email}");
                 if (string.IsNullOrWhiteSpace(user.Username))
                     throw new BadRequestException("A username is required to complete signup.");
@@ -178,6 +195,7 @@ namespace backend.main.features.auth
 
                 await _userRepository.CreateUserAsync(user);
                 await _usernameAvailability.MarkTakenAsync(user.Username);
+                await _emailAvailability.MarkRegisteredAsync(probeEmail);
 
                 return await _authSessionService.IssueAsync(user, transport);
             }
@@ -205,7 +223,11 @@ namespace backend.main.features.auth
                     VerificationPurpose.SignUp
                 );
 
-                if (await _userRepository.EmailExistsAsync(user.Email))
+                user.Email = EmailPolicy.Sanitize(user.Email);
+                var probeEmail = EmailPolicy.Normalize(user.Email);
+                // Authoritative: CreateUserAsync is a few lines away, so a stale "absent" here
+                // would turn a clean 409 into a unique-index violation surfacing as a 500.
+                if (await _emailAvailability.IsRegisteredAsync(probeEmail))
                     throw new ConflictException($"An account is already registered with the email: {user.Email}");
                 if (string.IsNullOrWhiteSpace(user.Username))
                     throw new BadRequestException("A username is required to complete signup.");
@@ -215,6 +237,7 @@ namespace backend.main.features.auth
 
                 await _userRepository.CreateUserAsync(user);
                 await _usernameAvailability.MarkTakenAsync(user.Username);
+                await _emailAvailability.MarkRegisteredAsync(probeEmail);
 
                 return await _authSessionService.IssueAsync(user, transport);
             }
@@ -288,7 +311,21 @@ namespace backend.main.features.auth
         {
             try
             {
-                var existingUser = await _userRepository.GetRecoveryByEmailAsync(email.Trim());
+                // Normalising matters more than it looks: the column is citext, so the old
+                // Trim() alone was enough for the database, but the filter hashes the literal
+                // string and would miss a mixed-case address.
+                var normalizedEmail = EmailPolicy.Normalize(email);
+
+                // Skips the query outright for an address no account has ever used, which is what
+                // most probes against this endpoint are. Deliberately the filter-only check rather
+                // than IsRegisteredAsync: the latter would fall back to its own query whenever the
+                // filter cannot answer, leaving this path doing two round trips instead of one.
+                // Advisory, and safely so — the method reports nothing to the caller either way,
+                // so a filter lagging a very recent signup costs one unsent reminder.
+                if (_emailAvailability.IsDefinitelyUnregistered(normalizedEmail))
+                    return;
+
+                var existingUser = await _userRepository.GetRecoveryByEmailAsync(normalizedEmail);
                 if (existingUser == null || existingUser.IsDisabled)
                     return;
 
@@ -551,6 +588,10 @@ namespace backend.main.features.auth
                             ? pending.ProviderUserId
                             : null,
                     });
+                    // OAuth accounts have no username, so this is the only filter write the path
+                    // makes. Without it an address that signed up through a provider would keep
+                    // reporting as free until the next scheduled rebuild.
+                    await _emailAvailability.MarkRegisteredAsync(EmailPolicy.Normalize(user.Email));
                 }
                 else
                 {

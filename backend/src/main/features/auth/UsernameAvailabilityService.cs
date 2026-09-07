@@ -20,7 +20,7 @@ public sealed class UsernameAvailabilityService : IUsernameAvailabilityService
     public async Task<bool> IsUnavailableAsync(
         string normalizedUsername,
         DateTime utcNow,
-        UsernameLookupMode mode = UsernameLookupMode.Authoritative,
+        AvailabilityLookupMode mode = AvailabilityLookupMode.Authoritative,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -31,7 +31,7 @@ public sealed class UsernameAvailabilityService : IUsernameAvailabilityService
         // on another instance until the next refresh. Callers about to claim the name therefore
         // ask authoritatively, so a stale answer cannot turn a clean conflict into a 500 from the
         // unique index. PossiblyPresent and Unavailable always fall through.
-        if (mode == UsernameLookupMode.Advisory
+        if (mode == AvailabilityLookupMode.Advisory
             && _bloomFilters.MightContain(BloomFilterTargets.Username, normalizedUsername)
                 == BloomFilterLookup.DefinitelyAbsent)
         {

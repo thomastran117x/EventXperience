@@ -415,7 +415,7 @@ namespace backend.main.features.clubs.follow.invitations
                 throw new BadRequestException("A username or email address is required.");
 
             UserProfileRecord? user = LooksLikeEmail(trimmed)
-                ? await _userRepository.GetProfileByEmailAsync(trimmed.ToLowerInvariant())
+                ? await _userRepository.GetProfileByEmailAsync(EmailPolicy.Normalize(trimmed))
                 : await _userRepository.GetProfileByUsernameAsync(trimmed);
 
             return user

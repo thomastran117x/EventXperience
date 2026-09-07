@@ -18,13 +18,17 @@ using backend.main.features.events.registration;
 using backend.main.features.events.search;
 using backend.main.features.events.waitlist;
 using backend.main.features.payment;
+using backend.main.infrastructure.database.core;
 using backend.main.infrastructure.elasticsearch;
 
 using FluentAssertions;
 
+using Microsoft.EntityFrameworkCore;
+
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 
 namespace backend.tests.Unit.Application.Bootstrap;
 
@@ -50,10 +54,53 @@ public class ContainerTests
             descriptor.ServiceType == typeof(IBloomFilterSource)
             && descriptor.ImplementationType == typeof(UsernameBloomFilterSource));
         services.Should().Contain(descriptor =>
+            descriptor.ServiceType == typeof(IBloomFilterSource)
+            && descriptor.ImplementationType == typeof(EmailBloomFilterSource));
+        services.Should().Contain(descriptor =>
             descriptor.ServiceType == typeof(BloomFilterRebuildRunner));
         services.Should().Contain(descriptor =>
             descriptor.ServiceType == typeof(IUsernameAvailabilityService)
             && descriptor.ImplementationType == typeof(UsernameAvailabilityService));
+        services.Should().Contain(descriptor =>
+            descriptor.ServiceType == typeof(IEmailAvailabilityService)
+            && descriptor.ImplementationType == typeof(EmailAvailabilityService));
+    }
+
+    /// <summary>
+    /// Sources and configured targets must be the same set, in both directions.
+    /// </summary>
+    /// <remarks>
+    /// A source with no matching target fails silently: <c>BloomFilterRebuildRunner</c> warns once
+    /// per cycle and every lookup for it degrades to a database query forever, so the filter simply
+    /// never turns on. A target with no source is an empty bitmap that answers DefinitelyAbsent for
+    /// values that do exist. Both sides are derived from the bound options rather than a literal
+    /// list, so adding a target without its source (or the reverse) fails here.
+    ///
+    /// Deliberately built on the defaults with no configuration supplied: appsettings.json is not
+    /// loaded on every host, so the defaults are what has to be self-consistent.
+    /// </remarks>
+    [Fact]
+    public void AddApplicationServices_ShouldRegisterExactlyOneSourcePerConfiguredTarget()
+    {
+        var config = new ConfigurationBuilder().Build();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IConfiguration>(config);
+        services.AddSingleton<ICacheService, NoOpCacheService>();
+        // Sources are scoped and take the DbContext; they only need to be constructible here.
+        services.AddDbContext<AppDatabaseContext>(options => options.UseSqlite("Data Source=:memory:"));
+
+        services.AddApplicationServices(config, includeHostedServices: false);
+
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+
+        var configuredTargets = provider.GetRequiredService<IOptions<BloomFilterOptions>>()
+            .Value.Targets.Keys;
+        var coveredTargets = scope.ServiceProvider.GetServices<IBloomFilterSource>()
+            .Select(source => source.Target);
+
+        coveredTargets.Should().BeEquivalentTo(configuredTargets);
     }
 
     [Fact]
@@ -96,9 +143,11 @@ public class ContainerTests
         services.Should().NotContain(descriptor =>
             descriptor.ServiceType == typeof(BloomFilterRebuildRunner));
 
-        // Still registered: it falls back to the repository whenever the filter cannot answer.
+        // Still registered: both fall back to the repository whenever the filter cannot answer.
         services.Should().Contain(descriptor =>
             descriptor.ServiceType == typeof(IUsernameAvailabilityService));
+        services.Should().Contain(descriptor =>
+            descriptor.ServiceType == typeof(IEmailAvailabilityService));
     }
 
     [Fact]

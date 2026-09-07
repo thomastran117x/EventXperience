@@ -29,6 +29,11 @@ export interface UsernameAvailabilityResponse {
   available: boolean;
 }
 
+export interface EmailAvailabilityResponse {
+  email: string;
+  available: boolean;
+}
+
 export interface SignupRequest {
   email: string;
   username: string;
@@ -221,6 +226,18 @@ export class AuthService {
         params: { username },
       })
       .pipe(map((res) => this.requireData(res, 'Username availability response was incomplete.')));
+  }
+
+  /**
+   * Asks whether an email address is still unregistered. Advisory only: the address is not
+   * reserved by asking, so signup can still fail with a conflict if someone registers it first.
+   */
+  checkEmailAvailability(email: string): Observable<EmailAvailabilityResponse> {
+    return this.api
+      .get<ApiEnvelope<EmailAvailabilityResponse>>(`${this.baseUrl}/email/availability`, {
+        params: { email },
+      })
+      .pipe(map((res) => this.requireData(res, 'Email availability response was incomplete.')));
   }
 
   signup(payload: SignupRequest): Observable<ApiEnvelope<VerificationChallengeResponse>> {

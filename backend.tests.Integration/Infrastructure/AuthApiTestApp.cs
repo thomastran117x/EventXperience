@@ -10,6 +10,7 @@ using backend.main.features.auth.device;
 using backend.main.features.auth.mfa;
 using backend.main.features.auth.oauth;
 using backend.main.features.auth.token;
+using backend.main.features.bloom;
 using backend.main.features.cache;
 using backend.main.features.clubs.posts.search;
 using backend.main.features.clubs.search;
@@ -47,6 +48,9 @@ public sealed class AuthApiTestApp : IAsyncDisposable
 
     public HttpClient Client { get; }
     public ICacheService Cache => _factory.Services.GetRequiredService<ICacheService>();
+    /// <summary>The running app's filter registry, for asserting what the advisory endpoints can rely on.</summary>
+    public IBloomFilterRegistry BloomFilters =>
+        _factory.Services.GetRequiredService<IBloomFilterRegistry>();
     /// <summary>Routing metadata for the running app, for asserting endpoint configuration.</summary>
     public EndpointDataSource Endpoints =>
         _factory.Services.GetRequiredService<EndpointDataSource>();

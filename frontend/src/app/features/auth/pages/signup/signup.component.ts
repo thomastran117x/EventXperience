@@ -10,6 +10,10 @@ import { RecaptchaV3Service } from '../../services/recaptcha.service';
 import { getApiClientMessage } from '../../../../core/api/models/api-client-error.model';
 import { AuthReturnUrlService } from '../../services/auth-return-url.service';
 import {
+  emailAvailabilityValidator,
+  normalizeEmail,
+} from '../../validators/email-availability.validator';
+import {
   normalizeUsername,
   usernameAvailabilityValidator,
 } from '../../validators/username-availability.validator';
@@ -31,6 +35,9 @@ export class SignupComponent {
   /** The last username the API actually confirmed as free; null whenever we did not get an answer. */
   private readonly confirmedAvailable = signal<string | null>(null);
 
+  /** The last email the API actually confirmed as unregistered; null when we did not get an answer. */
+  private readonly confirmedEmailAvailable = signal<string | null>(null);
+
   readonly siteKey = environment.googleSiteKey;
   readonly roleOptions: Array<{ value: SignupRole; label: string }> = [
     { value: 'participant', label: 'Participant' },
@@ -39,7 +46,12 @@ export class SignupComponent {
   ];
 
   readonly form = this.fb.nonNullable.group({
-    email: this.fb.nonNullable.control('', [Validators.required, Validators.email]),
+    email: this.fb.nonNullable.control('', {
+      validators: [Validators.required, Validators.email],
+      asyncValidators: [
+        emailAvailabilityValidator(this.auth, (email) => this.confirmedEmailAvailable.set(email)),
+      ],
+    }),
     username: this.fb.nonNullable.control('', {
       validators: [Validators.required, Validators.maxLength(50)],
       asyncValidators: [
@@ -58,8 +70,24 @@ export class SignupComponent {
   success = '';
 
   private readonly usernameStatus = signal(this.form.controls.username.status);
+  private readonly emailStatus = signal(this.form.controls.email.status);
 
   readonly usernameChecking = computed(() => this.usernameStatus() === 'PENDING');
+  readonly emailChecking = computed(() => this.emailStatus() === 'PENDING');
+
+  /**
+   * Same rule as usernameAvailable(): the validator fails open, so a failed or rate-limited probe
+   * also leaves the control VALID. Only a confirmed answer for the current value may claim the
+   * address is free.
+   */
+  readonly emailAvailable = computed(() => {
+    const confirmed = this.confirmedEmailAvailable();
+    return (
+      this.emailStatus() === 'VALID' &&
+      confirmed !== null &&
+      confirmed === normalizeEmail(this.form.controls.email.value)
+    );
+  });
 
   /**
    * Only claim availability for a name the API actually confirmed. The validator fails open, so
@@ -83,6 +111,9 @@ export class SignupComponent {
     this.form.controls.username.statusChanges
       .pipe(takeUntilDestroyed())
       .subscribe((status) => this.usernameStatus.set(status));
+    this.form.controls.email.statusChanges
+      .pipe(takeUntilDestroyed())
+      .subscribe((status) => this.emailStatus.set(status));
   }
 
   ngOnInit(): void {
@@ -103,8 +134,12 @@ export class SignupComponent {
     try {
       const captcha = await this.recaptcha.execute(this.siteKey, 'signup');
       const values = this.form.getRawValue();
+      // Deliberately not written back into the controls. setValue re-runs the async validators
+      // (emitEvent: false suppresses the events but still issues the request), spending a probe
+      // from the rate-limit budget on every submit and leaving the fields PENDING under a form
+      // that has already been submitted. The payload below carries the exact values being sent,
+      // so echoing them into the inputs bought nothing.
       const username = normalizeUsername(values.username);
-      this.form.controls.username.setValue(username);
       this.auth
         .signup({
           ...values,

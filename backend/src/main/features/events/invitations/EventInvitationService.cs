@@ -106,7 +106,7 @@ public sealed class EventInvitationService : IEventInvitationService
                 EventId = eventId,
                 RecipientUserId = userId,
                 RecipientEmail = user.Email,
-                RecipientEmailNormalized = NormalizeEmail(user.Email),
+                RecipientEmailNormalized = EmailPolicy.Normalize(user.Email),
                 SourceType = EventInvitationSource.DirectUser,
                 LifecycleStatus = EventInvitationLifecycleStatus.Pending,
                 DeliveryStatus = EventInvitationDeliveryStatus.Queued,
@@ -315,7 +315,7 @@ public sealed class EventInvitationService : IEventInvitationService
         if (string.IsNullOrWhiteSpace(token))
             throw new BadRequestException("A token is required.");
 
-        var normalizedEmail = NormalizeEmail(userEmail);
+        var normalizedEmail = EmailPolicy.Normalize(userEmail);
         var tokenHash = ComputeTokenHash(token);
         var now = GetUtcNow();
 
@@ -416,7 +416,7 @@ public sealed class EventInvitationService : IEventInvitationService
             throw new BadRequestException("Link-based invitations must be accepted from the invitation link.");
 
         var now = GetUtcNow();
-        var normalizedEmail = NormalizeEmail(userEmail);
+        var normalizedEmail = EmailPolicy.Normalize(userEmail);
         EnsureDirectInvitationCanBeAccepted(invitation, userId, normalizedEmail, now);
         await EnsureEventAcceptsInvitationsAsync(invitation.EventId);
 
@@ -442,7 +442,7 @@ public sealed class EventInvitationService : IEventInvitationService
         if (string.IsNullOrWhiteSpace(token))
             throw new BadRequestException("A token is required.");
 
-        var normalizedEmail = NormalizeEmail(userEmail);
+        var normalizedEmail = EmailPolicy.Normalize(userEmail);
         var tokenHash = ComputeTokenHash(token);
         var now = GetUtcNow();
 
@@ -530,7 +530,7 @@ public sealed class EventInvitationService : IEventInvitationService
             throw new BadRequestException("Link-based invitations must be declined from the invitation link.");
 
         var now = GetUtcNow();
-        var normalizedEmail = NormalizeEmail(userEmail);
+        var normalizedEmail = EmailPolicy.Normalize(userEmail);
         EnsureDirectInvitationCanBeDecided(invitation, userId, normalizedEmail, now);
 
         invitation.LifecycleStatus = EventInvitationLifecycleStatus.Declined;
@@ -552,7 +552,7 @@ public sealed class EventInvitationService : IEventInvitationService
 
     public async Task<IReadOnlyList<EventInvitationResponse>> GetMyInvitationsAsync(int userId, string userEmail)
     {
-        var normalizedEmail = NormalizeEmail(userEmail);
+        var normalizedEmail = EmailPolicy.Normalize(userEmail);
 
         return await _refreshCache.GetOrSetAsync(
             GetMyInvitationsCacheKey(userId, normalizedEmail),
@@ -1005,7 +1005,7 @@ public sealed class EventInvitationService : IEventInvitationService
                 try
                 {
                     _ = new MailAddress(email);
-                    return (Original: email, Normalized: NormalizeEmail(email));
+                    return (Original: email, Normalized: EmailPolicy.Normalize(email));
                 }
                 catch (FormatException)
                 {
@@ -1015,10 +1015,8 @@ public sealed class EventInvitationService : IEventInvitationService
             .ToList();
     }
 
-    private static string NormalizeEmail(string email) => email.Trim().ToLowerInvariant();
-
     private static string? NormalizeOptionalEmail(string? email) =>
-        string.IsNullOrWhiteSpace(email) ? null : NormalizeEmail(email);
+        string.IsNullOrWhiteSpace(email) ? null : EmailPolicy.Normalize(email);
 
     private DateTime GetUtcNow() => _timeProvider.GetUtcNow().UtcDateTime;
 

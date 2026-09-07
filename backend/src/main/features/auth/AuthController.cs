@@ -32,6 +32,7 @@ namespace backend.main.features.auth
         private const string DefaultFrontendUrl = "http://localhost:3090";
         private readonly IAuthService _authService;
         private readonly IUsernameAvailabilityService _usernameAvailability;
+        private readonly IEmailAvailabilityService _emailAvailability;
         private readonly IAntiforgery _antiforgery;
         private readonly ICaptchaService _captchaService;
         private readonly SeedAccountBypassPolicy _seedBypass;
@@ -41,6 +42,7 @@ namespace backend.main.features.auth
         public AuthController(
             IAuthService authService,
             IUsernameAvailabilityService usernameAvailability,
+            IEmailAvailabilityService emailAvailability,
             IAntiforgery antiforgery,
             ICaptchaService captchaService,
             SeedAccountBypassPolicy seedBypass,
@@ -50,6 +52,7 @@ namespace backend.main.features.auth
         {
             _authService = authService;
             _usernameAvailability = usernameAvailability;
+            _emailAvailability = emailAvailability;
             _antiforgery = antiforgery;
             _captchaService = captchaService;
             _seedBypass = seedBypass;
@@ -164,7 +167,7 @@ namespace backend.main.features.auth
                 var unavailable = await _usernameAvailability.IsUnavailableAsync(
                     normalized,
                     DateTime.UtcNow,
-                    UsernameLookupMode.Advisory,
+                    AvailabilityLookupMode.Advisory,
                     cancellationToken
                 );
 
@@ -186,6 +189,70 @@ namespace backend.main.features.auth
                     return HandleError.Resolve(e);
 
                 Logger.Error($"[AuthController] CheckUsernameAvailability failed: {e}");
+                return HandleError.Resolve(e);
+            }
+        }
+
+        /// <summary>
+        /// Reports whether an email address is free, so signup can point a returning user at login
+        /// instead of letting them fill in the whole form and fail.
+        /// </summary>
+        /// <remarks>
+        /// Anonymous by necessity — it serves the signup form, where there is no session yet — and
+        /// therefore an account-existence oracle, accepted deliberately because the signup UX is
+        /// judged to be worth it.
+        ///
+        /// Be clear about what that costs: this is strictly cheaper to script than the signup it
+        /// serves. <c>LocalSignup</c> requires an antiforgery token and a passing captcha; this
+        /// requires neither and answers with a boolean. So existence testing that was previously
+        /// behind a captcha is now bounded only by
+        /// <see cref="RateLimiterConfiguration.EmailAvailabilityPolicyName"/>, which is why that
+        /// policy is half the username budget. Gate this endpoint, or lower that limit, if
+        /// enumeration ever matters more than the type-ahead. See the bloom filter section of
+        /// docs/CONFIGURATION.md.
+        ///
+        /// The answer is advisory. An address reported free can be registered a moment later; the
+        /// unique index is what actually decides.
+        /// </remarks>
+        [HttpGet("email/availability")]
+        [AllowAnonymous]
+        [EnableRateLimiting(RateLimiterConfiguration.EmailAvailabilityPolicyName)]
+        [ProducesResponseType(typeof(ApiResponse<EmailAvailabilityResponse>), StatusCodes.Status200OK)]
+        public async Task<IActionResult> CheckEmailAvailability(
+            [FromQuery] string email,
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                var normalized = EmailPolicy.NormalizeAndValidate(email);
+
+                // Advisory: this endpoint only reports, it never claims, so letting the filter
+                // answer outright is what makes a type-ahead probe cheap. The signup path that
+                // actually creates the account still confirms against the database.
+                var registered = await _emailAvailability.IsRegisteredAsync(
+                    normalized,
+                    AvailabilityLookupMode.Advisory,
+                    cancellationToken
+                );
+
+                return StatusCode(
+                    200,
+                    new ApiResponse<EmailAvailabilityResponse>(
+                        registered ? "Email is already registered." : "Email is available.",
+                        new EmailAvailabilityResponse
+                        {
+                            Email = normalized,
+                            Available = !registered,
+                        }
+                    )
+                );
+            }
+            catch (Exception e)
+            {
+                if (e is AppException)
+                    return HandleError.Resolve(e);
+
+                Logger.Error($"[AuthController] CheckEmailAvailability failed: {e}");
                 return HandleError.Resolve(e);
             }
         }

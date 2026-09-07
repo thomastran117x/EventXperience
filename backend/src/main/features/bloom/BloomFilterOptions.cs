@@ -51,7 +51,11 @@ public sealed class BloomFilterOptions : IValidatableObject
     } =
         new(StringComparer.Ordinal)
         {
+            // Every registered source needs a matching target here, not just in appsettings.json.
+            // A source with no configured filter is silent: the rebuild runner warns once a cycle
+            // and every lookup degrades to a database query, so the feature simply never turns on.
             [BloomFilterTargets.Username] = new(),
+            [BloomFilterTargets.Email] = new(),
         };
 
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)

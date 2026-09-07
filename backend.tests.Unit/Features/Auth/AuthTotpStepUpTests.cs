@@ -77,6 +77,7 @@ public class AuthTotpStepUpControllerTests
         return new AuthController(
             authService.Object,
             new UsernameAvailabilityService(new Mock<IAuthUserRepository>().Object, new DisabledBloomFilterRegistry()),
+            new EmailAvailabilityService(new Mock<IAuthUserRepository>().Object, new DisabledBloomFilterRegistry()),
             antiforgery.Object,
             captchaService.Object,
             new SeedAccountBypassPolicy(configuration),
@@ -177,6 +178,7 @@ public class AuthTotpStepUpServiceTests
             loginStepUpChallengeService.Object,
             authSessionService.Object,
             new UsernameAvailabilityService(userRepository.Object, new DisabledBloomFilterRegistry()),
+            new EmailAvailabilityService(userRepository.Object, new DisabledBloomFilterRegistry()),
             new SeedAccountBypassPolicy(new ConfigurationBuilder().Build()),
             TestRequestInfoFactory.Browser());
     }

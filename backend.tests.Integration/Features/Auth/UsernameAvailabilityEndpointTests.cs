@@ -9,9 +9,13 @@ using FluentAssertions;
 namespace backend.tests.Integration.Features.Auth;
 
 /// <summary>
-/// Exercises the availability endpoint against a real Postgres and Redis, so the two-tier bloom
-/// filter path runs for real rather than against a stub.
+/// Exercises the availability endpoint against a real Postgres and Redis.
 /// </summary>
+/// <remarks>
+/// Covers the endpoint and its database fallback, not the filter itself: nothing hydrates the
+/// registry in this host, so every lookup reports Unavailable and falls through to the
+/// repository. See the remarks on <c>EmailAvailabilityEndpointTests</c>, which pins that.
+/// </remarks>
 [Collection(IntegrationTestCollection.Name)]
 public class UsernameAvailabilityEndpointTests
 {

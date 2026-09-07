@@ -1075,6 +1075,379 @@ public class AuthServiceTests
         tokenService.Verify(service => service.RevokeRefreshSessionAsync("session-9"), Times.Once);
     }
 
+    /// <summary>
+    /// The address we persist and deliver mail to must keep the casing the user typed.
+    /// </summary>
+    /// <remarks>
+    /// RFC 5321 leaves the local part case-sensitive to the destination host, so mailing a
+    /// lowercased address can bounce on a host that distinguishes them — and the account would be
+    /// unrecoverable, because the stored address is not one that exists. Only the filter lookup
+    /// gets the lowercased form.
+    /// </remarks>
+    [Fact]
+    public async Task SignUpAsync_ShouldMailTheAddressAsTyped_WhileProbingTheNormalisedForm()
+    {
+        var emailAvailability = new Mock<IEmailAvailabilityService>();
+        var service = CreateServiceWithEmailFilter(
+            emailAvailability,
+            out var userRepository,
+            out var notifications,
+            out var tokenService);
+        userRepository.Setup(repository => repository.GetAuthByUsernameAsync("new-user"))
+            .ReturnsAsync((UserAuthRecord?)null);
+
+        backend.main.features.profile.User? captured = null;
+        tokenService.Setup(t => t.GenerateVerificationArtifactsAsync(
+                It.IsAny<backend.main.features.profile.User>(),
+                VerificationPurpose.SignUp))
+            .Callback<backend.main.features.profile.User, VerificationPurpose, bool>(
+                (user, _, _) => captured = user)
+            .ReturnsAsync(SignupArtifacts());
+
+        await service.SignUpAsync("  Ada.Lovelace@Example.COM  ", "new-user", "Password123!", "organizer");
+
+        // Trimmed, but not lowercased.
+        captured.Should().NotBeNull();
+        captured!.Email.Should().Be("Ada.Lovelace@Example.COM");
+        notifications.Verify(n => n.SendSignupVerificationAsync(
+                "Ada.Lovelace@Example.COM",
+                It.IsAny<string>(),
+                It.IsAny<string>()),
+            Times.Once);
+
+        // The filter only ever sees the lowercased form.
+        emailAvailability.Verify(availability => availability.IsRegisteredAsync(
+                "ada.lovelace@example.com",
+                AvailabilityLookupMode.Advisory,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task VerifyAsync_ShouldPersistTheAddressAsTyped_WhileRecordingTheNormalisedForm()
+    {
+        var user = new backend.main.features.profile.User
+        {
+            Id = 12,
+            Email = "  Ada.Lovelace@Example.COM  ",
+            Username = "verify-user",
+            Usertype = "Participant",
+            AuthVersion = 1
+        };
+        var emailAvailability = new Mock<IEmailAvailabilityService>();
+        var service = CreateSignupCompletionService(user, emailAvailability, out var tokenService);
+        tokenService.Setup(t => t.VerifyVerificationToken("verify-token", VerificationPurpose.SignUp))
+            .ReturnsAsync(user);
+
+        await service.VerifyAsync("verify-token", SessionTransport.BrowserCookie);
+
+        user.Email.Should().Be("Ada.Lovelace@Example.COM");
+        emailAvailability.Verify(availability => availability.MarkRegisteredAsync(
+                "ada.lovelace@example.com",
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    /// <summary>
+    /// The signup pre-flight creates nothing, and the verify step re-checks authoritatively before
+    /// inserting, so this is the one email read allowed to trust the filter.
+    /// </summary>
+    [Fact]
+    public async Task SignUpAsync_ShouldProbeTheEmailFilterAdvisorily()
+    {
+        var emailAvailability = new Mock<IEmailAvailabilityService>();
+        var service = CreateServiceWithEmailFilter(emailAvailability, out var userRepository);
+        userRepository.Setup(repository => repository.GetAuthByUsernameAsync("new-user"))
+            .ReturnsAsync((UserAuthRecord?)null);
+
+        await service.SignUpAsync("New@Example.COM", "new-user", "Password123!", "organizer");
+
+        emailAvailability.Verify(availability => availability.IsRegisteredAsync(
+                "new@example.com",
+                AvailabilityLookupMode.Advisory,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task SignUpAsync_ShouldRejectAnAddressReportedAsRegistered()
+    {
+        var emailAvailability = new Mock<IEmailAvailabilityService>();
+        emailAvailability.Setup(availability => availability.IsRegisteredAsync(
+                It.IsAny<string>(),
+                It.IsAny<AvailabilityLookupMode>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        var service = CreateServiceWithEmailFilter(emailAvailability, out _);
+
+        var act = () => service.SignUpAsync("taken@example.com", "new-user", "Password123!", "organizer");
+
+        await act.Should().ThrowAsync<ConflictException>();
+    }
+
+    /// <summary>
+    /// CreateUserAsync is a few lines away, so a stale "absent" here would turn a clean 409 into a
+    /// unique-index violation surfacing as a 500.
+    /// </summary>
+    [Fact]
+    public async Task VerifyAsync_ShouldProbeTheEmailFilterAuthoritatively_AndRecordTheAddress()
+    {
+        var user = new backend.main.features.profile.User
+        {
+            Id = 12,
+            Email = "Verify@Example.COM",
+            Username = "verify-user",
+            Usertype = "Participant",
+            AuthVersion = 1
+        };
+        var emailAvailability = new Mock<IEmailAvailabilityService>();
+        var service = CreateSignupCompletionService(user, emailAvailability, out var tokenService);
+        tokenService.Setup(t => t.VerifyVerificationToken("verify-token", VerificationPurpose.SignUp))
+            .ReturnsAsync(user);
+
+        await service.VerifyAsync("verify-token", SessionTransport.BrowserCookie);
+
+        emailAvailability.Verify(availability => availability.IsRegisteredAsync(
+                "verify@example.com",
+                AvailabilityLookupMode.Authoritative,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+        emailAvailability.Verify(
+            availability => availability.MarkRegisteredAsync("verify@example.com", It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task VerifyOtpAsync_ShouldProbeTheEmailFilterAuthoritatively_AndRecordTheAddress()
+    {
+        var user = new backend.main.features.profile.User
+        {
+            Id = 13,
+            Email = "verify-otp@example.com",
+            Username = "verify-otp-user",
+            Usertype = "Organizer",
+            AuthVersion = 1
+        };
+        var emailAvailability = new Mock<IEmailAvailabilityService>();
+        var service = CreateSignupCompletionService(user, emailAvailability, out var tokenService);
+        tokenService.Setup(t => t.VerifyVerificationOtpAsync("123456", "challenge", VerificationPurpose.SignUp))
+            .ReturnsAsync(user);
+
+        await service.VerifyOtpAsync("123456", "challenge", SessionTransport.BrowserCookie);
+
+        emailAvailability.Verify(availability => availability.IsRegisteredAsync(
+                "verify-otp@example.com",
+                AvailabilityLookupMode.Authoritative,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+        emailAvailability.Verify(
+            availability => availability.MarkRegisteredAsync("verify-otp@example.com", It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    /// <summary>
+    /// OAuth accounts have no username, so this is the only filter write the path makes. Without
+    /// it a provider-created address keeps reporting as free until the next scheduled rebuild.
+    /// </summary>
+    [Fact]
+    public async Task CompleteOAuthSignupAsync_ShouldRecordTheAddress_ForANewAccount()
+    {
+        var emailAvailability = new Mock<IEmailAvailabilityService>();
+        var service = CreateOAuthSignupService(emailAvailability, existingUser: false);
+
+        await service.CompleteOAuthSignupAsync("signup-token", "organizer", SessionTransport.BrowserCookie);
+
+        emailAvailability.Verify(
+            availability => availability.MarkRegisteredAsync("pending@example.com", It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    /// <summary>
+    /// Linking a provider to an account that already exists creates no row, so there is nothing
+    /// new for the filter to learn.
+    /// </summary>
+    [Fact]
+    public async Task CompleteOAuthSignupAsync_ShouldNotRecordTheAddress_WhenLinkingAnExistingAccount()
+    {
+        var emailAvailability = new Mock<IEmailAvailabilityService>();
+        var service = CreateOAuthSignupService(emailAvailability, existingUser: true);
+
+        await service.CompleteOAuthSignupAsync("signup-token", "organizer", SessionTransport.BrowserCookie);
+
+        emailAvailability.Verify(
+            availability => availability.MarkRegisteredAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    /// <summary>
+    /// The saving this buys: an address no account has ever used costs a bitmap probe instead of
+    /// a query.
+    /// </summary>
+    [Fact]
+    public async Task RecoverUsernameAsync_ShouldSkipTheQuery_WhenTheFilterProvesTheAddressIsUnknown()
+    {
+        var userRepository = new Mock<IAuthUserRepository>();
+        var emailAvailability = new Mock<IEmailAvailabilityService>();
+        emailAvailability.Setup(availability => availability.IsDefinitelyUnregistered("stranger@example.com"))
+            .Returns(true);
+        var notifications = new Mock<IAuthNotificationService>();
+        var service = CreateService(
+            userRepository: userRepository,
+            authNotificationService: notifications,
+            emailAvailability: emailAvailability.Object);
+
+        await service.RecoverUsernameAsync("  Stranger@Example.COM  ");
+
+        userRepository.Verify(
+            repository => repository.GetRecoveryByEmailAsync(It.IsAny<string>()),
+            Times.Never);
+        notifications.VerifyNoOtherCalls();
+    }
+
+    /// <summary>
+    /// The filter-only check must never add a round trip: when it cannot prove absence, this path
+    /// does exactly the one query it always did.
+    /// </summary>
+    [Fact]
+    public async Task RecoverUsernameAsync_ShouldQueryOnce_WhenTheFilterCannotProveAbsence()
+    {
+        var userRepository = new Mock<IAuthUserRepository>();
+        userRepository.Setup(repository => repository.GetRecoveryByEmailAsync("member@example.com"))
+            .ReturnsAsync(new UserRecoveryRecord
+            {
+                Id = 10,
+                Email = "member@example.com",
+                Username = "member-user",
+                RecipientName = "Member",
+                HasLocalPassword = true
+            });
+        var emailAvailability = new Mock<IEmailAvailabilityService>();
+        var notifications = new Mock<IAuthNotificationService>();
+        var service = CreateService(
+            userRepository: userRepository,
+            authNotificationService: notifications,
+            emailAvailability: emailAvailability.Object);
+
+        await service.RecoverUsernameAsync("Member@Example.COM");
+
+        userRepository.Verify(
+            repository => repository.GetRecoveryByEmailAsync("member@example.com"),
+            Times.Once);
+        userRepository.Verify(repository => repository.EmailExistsAsync(It.IsAny<string>()), Times.Never);
+        notifications.Verify(
+            n => n.SendUsernameReminderAsync("member@example.com", "member-user", "Member"),
+            Times.Once);
+    }
+
+    private static VerificationArtifacts SignupArtifacts() => new()
+    {
+        LinkToken = "verify-link",
+        Purpose = VerificationPurpose.SignUp,
+        OtpChallenge = new VerificationOtpChallenge
+        {
+            Code = "123456",
+            Challenge = "challenge",
+            ExpiresAtUtc = DateTime.UtcNow.AddMinutes(30)
+        }
+    };
+
+    private static AuthService CreateServiceWithEmailFilter(
+        Mock<IEmailAvailabilityService> emailAvailability,
+        out Mock<IAuthUserRepository> userRepository) =>
+        CreateServiceWithEmailFilter(emailAvailability, out userRepository, out _, out _);
+
+    private static AuthService CreateServiceWithEmailFilter(
+        Mock<IEmailAvailabilityService> emailAvailability,
+        out Mock<IAuthUserRepository> userRepository,
+        out Mock<IAuthNotificationService> notifications,
+        out Mock<ITokenService> tokenService)
+    {
+        userRepository = new Mock<IAuthUserRepository>();
+        notifications = new Mock<IAuthNotificationService>();
+        tokenService = new Mock<ITokenService>();
+        tokenService.Setup(service => service.GenerateVerificationArtifactsAsync(
+                It.IsAny<backend.main.features.profile.User>(),
+                VerificationPurpose.SignUp))
+            .ReturnsAsync(SignupArtifacts());
+
+        return CreateService(
+            userRepository: userRepository,
+            tokenService: tokenService,
+            authNotificationService: notifications,
+            emailAvailability: emailAvailability.Object);
+    }
+
+    private static AuthService CreateSignupCompletionService(
+        backend.main.features.profile.User user,
+        Mock<IEmailAvailabilityService> emailAvailability,
+        out Mock<ITokenService> tokenService)
+    {
+        var userRepository = new Mock<IAuthUserRepository>();
+        userRepository.Setup(repository => repository.CreateUserAsync(It.IsAny<backend.main.features.profile.User>()))
+            .ReturnsAsync(user);
+
+        tokenService = CreateTokenServiceForUser(user);
+
+        return CreateService(
+            userRepository: userRepository,
+            tokenService: tokenService,
+            authSessionService: CreateAuthSessionServiceForUser(user),
+            emailAvailability: emailAvailability.Object);
+    }
+
+    private static AuthService CreateOAuthSignupService(
+        Mock<IEmailAvailabilityService> emailAvailability,
+        bool existingUser)
+    {
+        var pendingJson = JsonConvert.SerializeObject(new
+        {
+            ProviderUserId = "google-42",
+            Email = "pending@example.com",
+            Name = "Pending User",
+            Provider = "google",
+            Transport = SessionTransport.BrowserCookie
+        });
+
+        var cache = new Mock<ICacheService>();
+        cache.Setup(service => service.GetValueAsync("oauth:pending:signup-token"))
+            .ReturnsAsync(pendingJson);
+        cache.Setup(service => service.DeleteKeyAsync("oauth:pending:signup-token"))
+            .ReturnsAsync(true);
+
+        var user = new backend.main.features.profile.User
+        {
+            Id = 77,
+            Email = "pending@example.com",
+            Usertype = "Organizer",
+            GoogleID = "google-42",
+            AuthVersion = 1
+        };
+
+        var userRepository = new Mock<IAuthUserRepository>();
+        userRepository.Setup(repository => repository.GetOAuthByGoogleIdAsync("google-42"))
+            .ReturnsAsync(existingUser
+                ? new UserOAuthRecord
+                {
+                    Id = 77,
+                    Email = "pending@example.com",
+                    Usertype = "Organizer",
+                    GoogleID = "google-42",
+                    AuthVersion = 1
+                }
+                : null);
+        userRepository.Setup(repository => repository.GetOAuthByEmailAsync("pending@example.com"))
+            .ReturnsAsync((UserOAuthRecord?)null);
+        userRepository.Setup(repository => repository.CreateUserAsync(It.IsAny<backend.main.features.profile.User>()))
+            .ReturnsAsync(user);
+
+        return CreateService(
+            userRepository: userRepository,
+            tokenService: CreateTokenServiceForUser(user),
+            cacheService: cache,
+            authSessionService: CreateAuthSessionServiceForUser(user),
+            emailAvailability: emailAvailability.Object);
+    }
+
     private static AuthService CreateService(
         Mock<IAuthUserRepository>? userRepository = null,
         Mock<IOAuthService>? oauthService = null,
@@ -1086,7 +1459,8 @@ public class AuthServiceTests
         Mock<IDeviceTrustService>? deviceTrustService = null,
         Mock<ILoginStepUpChallengeService>? loginStepUpChallengeService = null,
         Mock<IAuthSessionService>? authSessionService = null,
-        SeedAccountBypassPolicy? seedBypass = null)
+        SeedAccountBypassPolicy? seedBypass = null,
+        IEmailAvailabilityService? emailAvailability = null)
     {
         userRepository ??= new Mock<IAuthUserRepository>();
         oauthService ??= new Mock<IOAuthService>();
@@ -1099,6 +1473,11 @@ public class AuthServiceTests
         loginStepUpChallengeService ??= new Mock<ILoginStepUpChallengeService>();
         authSessionService ??= new Mock<IAuthSessionService>();
         seedBypass ??= new SeedAccountBypassPolicy(new ConfigurationBuilder().Build());
+        // Defaults to the real service over the disabled registry, so every existing test keeps
+        // resolving emails against the repository exactly as it did before the filter existed.
+        emailAvailability ??= new EmailAvailabilityService(
+            userRepository.Object,
+            new DisabledBloomFilterRegistry());
 
         return new AuthService(
             userRepository.Object,
@@ -1112,6 +1491,7 @@ public class AuthServiceTests
             loginStepUpChallengeService.Object,
             authSessionService.Object,
             new UsernameAvailabilityService(userRepository.Object, new DisabledBloomFilterRegistry()),
+            emailAvailability,
             seedBypass,
             TestRequestInfoFactory.Browser());
     }

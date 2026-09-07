@@ -270,7 +270,7 @@ namespace backend.main.features.clubs
         {
             var trimmed = identifier.Trim();
             var profile = trimmed.Contains('@')
-                ? await _userRepository.GetProfileByEmailAsync(trimmed.ToLowerInvariant())
+                ? await _userRepository.GetProfileByEmailAsync(EmailPolicy.Normalize(trimmed))
                 : await _userRepository.GetProfileByUsernameAsync(trimmed);
 
             return profile?.Id

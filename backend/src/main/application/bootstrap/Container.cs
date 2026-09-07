@@ -232,18 +232,20 @@ namespace backend.main.application.bootstrap
                     provider.GetRequiredService<BloomFilterRegistry>());
                 services.AddScoped<BloomFilterRebuildRunner>();
 
-                // One source per target. Club names and emails join here once their namespaces
-                // are actually constrained.
+                // One source per target. Club names join here once that namespace is actually
+                // constrained; today they have no uniqueness index to front.
                 services.AddScoped<IBloomFilterSource, UsernameBloomFilterSource>();
+                services.AddScoped<IBloomFilterSource, EmailBloomFilterSource>();
             }
             else
             {
                 services.AddSingleton<IBloomFilterRegistry, DisabledBloomFilterRegistry>();
             }
 
-            // Registered either way: it falls back to the repository whenever the filter cannot
-            // answer, so it behaves correctly with the feature off.
+            // Registered either way: both fall back to the repository whenever the filter cannot
+            // answer, so they behave correctly with the feature off.
             services.AddScoped<IUsernameAvailabilityService, UsernameAvailabilityService>();
+            services.AddScoped<IEmailAvailabilityService, EmailAvailabilityService>();
             services.AddScoped<IAzureBlobService, AzureBlobService>();
             services.AddScoped<OrphanBlobCleanupRunner>();
 

@@ -14257,6 +14257,67 @@
         }
       }
     },
+    "/api/auth/email/availability": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Check email availability",
+        "description": "Anonymous by necessity — it serves the signup form, where there is no session yet — and\r\ntherefore an account-existence oracle, accepted deliberately because the signup UX is\r\njudged to be worth it.\r\n\r\nBe clear about what that costs: this is strictly cheaper to script than the signup it\r\nserves. `LocalSignup` requires an antiforgery token and a passing captcha; this\r\nrequires neither and answers with a boolean. So existence testing that was previously\r\nbehind a captcha is now bounded only by\r\nstring RateLimiterConfiguration.EmailAvailabilityPolicyName, which is why that\r\npolicy is half the username budget. Gate this endpoint, or lower that limit, if\r\nenumeration ever matters more than the type-ahead. See the bloom filter section of\r\ndocs/CONFIGURATION.md.\r\n\r\nThe answer is advisory. An address reported free can be registered a moment later; the\r\nunique index is what actually decides.",
+        "operationId": "Auth_CheckEmailAvailability_get",
+        "parameters": [
+          {
+            "name": "email",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/String"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOfEmailAvailabilityResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOfEmailAvailabilityResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOfEmailAvailabilityResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request, validation failure, or CSRF failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOfObject"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOfObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/auth/verify/otp": {
       "post": {
         "tags": [
@@ -19042,6 +19103,48 @@
               {
                 "description": "Endpoint-specific response payload.",
                 "$ref": "#/components/schemas/DiscussionReplyResponse"
+              }
+            ],
+            "description": "Endpoint-specific response payload. `null` on error responses."
+          },
+          "error": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "description": "Structured error details when the request fails.",
+                "$ref": "#/components/schemas/ApiError"
+              }
+            ],
+            "description": "Structured error details. Present only when `success` is `false`."
+          },
+          "meta": {
+            "description": "Optional metadata such as pagination or response source details.",
+            "$ref": "#/components/schemas/Object"
+          }
+        },
+        "description": "Standard JSON envelope returned by all API endpoints."
+      },
+      "ApiResponseOfEmailAvailabilityResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "description": "Indicates whether the request succeeded.",
+            "$ref": "#/components/schemas/Boolean"
+          },
+          "message": {
+            "description": "Human-readable message summarizing the outcome.",
+            "$ref": "#/components/schemas/String"
+          },
+          "data": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "description": "Endpoint-specific response payload.",
+                "$ref": "#/components/schemas/EmailAvailabilityResponse"
               }
             ],
             "description": "Endpoint-specific response payload. `null` on error responses."
@@ -24056,6 +24159,24 @@
           "string"
         ],
         "format": "double"
+      },
+      "EmailAvailabilityResponse": {
+        "required": [
+          "email",
+          "available"
+        ],
+        "type": "object",
+        "properties": {
+          "email": {
+            "description": "The normalised form the address was checked as, so the client can show what it evaluated.",
+            "$ref": "#/components/schemas/String"
+          },
+          "available": {
+            "description": "True when no account currently uses the address. Advisory only: the address is not reserved\r\nby asking, and signup can still fail with a conflict if someone registers it first.",
+            "$ref": "#/components/schemas/Boolean"
+          }
+        },
+        "description": "Result of an email availability probe."
       },
       "EmailMfaSettingsDto": {
         "required": [

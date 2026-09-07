@@ -601,10 +601,106 @@ public class AuthControllerTests
         AssertErrorResult(result, 400, "Missing password reset token or OTP challenge.");
     }
 
+    [Fact]
+    public async Task CheckEmailAvailability_ShouldReportAnUnknownAddressAsAvailable()
+    {
+        var emailAvailability = new Mock<IEmailAvailabilityService>();
+        emailAvailability.Setup(service => service.IsRegisteredAsync(
+                "ada@example.com",
+                AvailabilityLookupMode.Advisory,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+        var controller = CreateController(emailAvailability: emailAvailability);
+
+        var result = await controller.CheckEmailAvailability("ada@example.com", CancellationToken.None);
+
+        var body = AssertOkResult<EmailAvailabilityResponse>(result, "Email is available.");
+        body.Email.Should().Be("ada@example.com");
+        body.Available.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task CheckEmailAvailability_ShouldReportARegisteredAddressAsUnavailable()
+    {
+        var emailAvailability = new Mock<IEmailAvailabilityService>();
+        emailAvailability.Setup(service => service.IsRegisteredAsync(
+                "ada@example.com",
+                AvailabilityLookupMode.Advisory,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        var controller = CreateController(emailAvailability: emailAvailability);
+
+        var result = await controller.CheckEmailAvailability("ada@example.com", CancellationToken.None);
+
+        var body = AssertOkResult<EmailAvailabilityResponse>(result, "Email is already registered.");
+        body.Available.Should().BeFalse();
+    }
+
+    /// <summary>
+    /// The probe must evaluate the same string the filter was seeded with, and echo it back so the
+    /// client can see what was actually checked.
+    /// </summary>
+    [Fact]
+    public async Task CheckEmailAvailability_ShouldNormaliseBeforeLookingUp()
+    {
+        var emailAvailability = new Mock<IEmailAvailabilityService>();
+        var controller = CreateController(emailAvailability: emailAvailability);
+
+        var result = await controller.CheckEmailAvailability("  Ada@Example.COM  ", CancellationToken.None);
+
+        AssertOkResult<EmailAvailabilityResponse>(result, "Email is available.")
+            .Email.Should().Be("ada@example.com");
+        emailAvailability.Verify(service => service.IsRegisteredAsync(
+                "ada@example.com",
+                AvailabilityLookupMode.Advisory,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    /// <summary>
+    /// Advisory is what makes a type-ahead probe cheap; an authoritative probe here would query
+    /// the database on every keystroke pause and defeat the filter entirely.
+    /// </summary>
+    [Fact]
+    public async Task CheckEmailAvailability_ShouldAskAdvisorily()
+    {
+        var emailAvailability = new Mock<IEmailAvailabilityService>();
+        var controller = CreateController(emailAvailability: emailAvailability);
+
+        await controller.CheckEmailAvailability("ada@example.com", CancellationToken.None);
+
+        emailAvailability.Verify(service => service.IsRegisteredAsync(
+                It.IsAny<string>(),
+                AvailabilityLookupMode.Authoritative,
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Theory]
+    [InlineData("", "Email is required.")]
+    [InlineData("   ", "Email is required.")]
+    [InlineData("not-an-address", "Email must be a valid email address.")]
+    public async Task CheckEmailAvailability_ShouldRejectMalformedInput(string email, string expected)
+    {
+        var emailAvailability = new Mock<IEmailAvailabilityService>();
+        var controller = CreateController(emailAvailability: emailAvailability);
+
+        var result = await controller.CheckEmailAvailability(email, CancellationToken.None);
+
+        AssertErrorResult(result, 400, expected);
+        // A malformed value never reaches the filter or the database.
+        emailAvailability.Verify(service => service.IsRegisteredAsync(
+                It.IsAny<string>(),
+                It.IsAny<AvailabilityLookupMode>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
     private static AuthController CreateController(
         Mock<IAuthService>? authService = null,
         Mock<ICaptchaService>? captchaService = null,
-        Mock<IAntiforgery>? antiforgery = null)
+        Mock<IAntiforgery>? antiforgery = null,
+        Mock<IEmailAvailabilityService>? emailAvailability = null)
     {
         authService ??= new Mock<IAuthService>();
         captchaService ??= new Mock<ICaptchaService>();
@@ -624,6 +720,10 @@ public class AuthControllerTests
         var controller = new AuthController(
             authService.Object,
             new UsernameAvailabilityService(new Mock<IAuthUserRepository>().Object, new DisabledBloomFilterRegistry()),
+            emailAvailability?.Object
+                ?? new EmailAvailabilityService(
+                    new Mock<IAuthUserRepository>().Object,
+                    new DisabledBloomFilterRegistry()),
             antiforgery.Object,
             captchaService.Object,
             new SeedAccountBypassPolicy(configuration),
@@ -677,6 +777,15 @@ public class AuthControllerTests
         var objectResult = result.Should().BeAssignableTo<ObjectResult>().Subject;
         objectResult.StatusCode.Should().Be(expectedStatusCode);
         return objectResult.Value.Should().BeOfType<MessageResponse>().Subject;
+    }
+
+    private static T AssertOkResult<T>(IActionResult result, string expectedMessage)
+    {
+        var objectResult = result.Should().BeAssignableTo<ObjectResult>().Subject;
+        objectResult.StatusCode.Should().Be(200);
+        var response = objectResult.Value.Should().BeOfType<ApiResponse<T>>().Subject;
+        response.Message.Should().Be(expectedMessage);
+        return response.Data!;
     }
 
     private static void AssertErrorResult(IActionResult result, int expectedStatusCode, string expectedMessage)

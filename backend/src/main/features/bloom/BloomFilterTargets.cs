@@ -12,7 +12,7 @@ public static class BloomFilterTargets
     /// <summary>Club names. Reserved: no filter is registered until club names are made unique.</summary>
     public const string ClubName = "club-name";
 
-    /// <summary>Account email addresses. Reserved: not registered yet.</summary>
+    /// <summary>Account email addresses, as stored on the user row.</summary>
     public const string Email = "email";
 
     /// <summary>Every target name the configuration binder will accept.</summary>

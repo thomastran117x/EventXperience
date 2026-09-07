@@ -118,14 +118,26 @@ Bound from the `BloomFilters` section of `appsettings.json`:
 
 ### Targets
 
-`username` is the only registered target. `club-name` and `email` are reserved names — adding one
-means a `BloomFilters:Targets:<name>` entry plus an `IBloomFilterSource` implementation registered
-in `Container.AddApplicationServices`; nothing in the registry or the rebuild service changes.
+`username` and `email` are registered. `club-name` is a reserved name — adding it means a
+`BloomFilters:Targets:<name>` entry plus an `IBloomFilterSource` implementation registered in
+`Container.AddApplicationServices`; nothing in the registry or the rebuild service changes. Club
+names have no uniqueness constraint or index today, so a filter over them could only warn about
+duplicates rather than report availability, which is why the target stays unregistered.
 
-Two caveats before adding them: club names have no uniqueness constraint or index today, so a
-filter over them can only warn about duplicates rather than report availability; and email
-membership must never be exposed through an anonymous endpoint, because that turns account
-existence into a reconnaissance oracle.
+The `email` filter is exposed anonymously through `GET /api/auth/email/availability`, so the signup
+form can tell a returning user their address is already registered instead of failing them after
+submission. That is a deliberate tradeoff, not an oversight, and it is worth stating
+precisely. The probe is *cheaper to script than signing up*: `POST /api/auth/signup` requires an
+antiforgery token and a passing captcha, while this endpoint requires neither and answers with a
+boolean. Account-existence testing that used to sit behind a captcha is therefore bounded only by
+`RateLimiter:EmailAvailabilityPermitLimit`, which defaults to 15 per minute per IP — half the
+username budget, because a list of real addresses is far more minable than a username namespace
+that has to be walked. Lower it, or put the endpoint behind a session or form nonce, if account
+enumeration matters more than signup ergonomics in your deployment.
+
+Filter membership is never authoritative for a write. Every path that creates or authenticates an
+account queries the database regardless of what the filter says; only read-only probes and the
+pre-flight signup check are allowed to trust a "definitely absent" answer.
 
 ### Rebuilds
 
