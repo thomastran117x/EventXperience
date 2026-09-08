@@ -557,7 +557,8 @@ namespace backend.main.features.auth
 
         public async Task<IReadOnlySet<string>> FindUnavailableUsernamesAsync(
             IReadOnlyCollection<string> usernames,
-            DateTime utcNow)
+            DateTime utcNow,
+            CancellationToken cancellationToken = default)
         {
             if (usernames.Count == 0)
                 return new HashSet<string>(StringComparer.Ordinal);
@@ -584,7 +585,7 @@ namespace backend.main.features.auth
             // Composed into a single UNION rather than awaited one after the other. Awaiting each
             // half separately would be two round trips per call, and the generator can call this
             // once per draw — so the batching this method exists for would be half undone.
-            var names = await held.Union(reserved).ToListAsync();
+            var names = await held.Union(reserved).ToListAsync(cancellationToken);
 
             // Username is citext, so the database may return a different casing than was asked for.
             // Normalize on the way out so the caller can match on the string it passed in.
@@ -900,6 +901,9 @@ namespace backend.main.features.auth
                 Id = u.Id,
                 Email = u.Email,
                 Username = string.IsNullOrWhiteSpace(u.Username) ? u.Email : u.Username,
+                UsernameDisplay = string.IsNullOrWhiteSpace(u.Username)
+                    ? u.Email
+                    : (u.UsernameDisplay ?? u.Username),
                 Name = u.Name,
                 Avatar = u.Avatar,
                 Usertype = AuthRoles.NormalizeStored(u.Usertype),

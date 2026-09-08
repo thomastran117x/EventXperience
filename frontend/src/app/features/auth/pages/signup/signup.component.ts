@@ -1,4 +1,5 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, PLATFORM_ID, computed, inject, signal } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
@@ -80,6 +81,8 @@ export class SignupComponent {
   error = '';
   success = '';
 
+  private readonly platformId = inject(PLATFORM_ID);
+
   private readonly usernameStatus = signal(this.form.controls.username.status);
   private readonly usernameValue = signal(this.form.controls.username.value);
   private readonly emailStatus = signal(this.form.controls.email.status);
@@ -138,7 +141,13 @@ export class SignupComponent {
 
   ngOnInit(): void {
     this.authReturnUrl.captureFromRoute(this.route);
-    this.loadSuggestions();
+
+    // Browser only. On the server this would spend the 10/min/IP suggestion budget from the SSR
+    // host's single address on behalf of every visitor, and the names drawn would be replaced by
+    // the client's own fetch on hydration anyway.
+    if (isPlatformBrowser(this.platformId)) {
+      this.loadSuggestions();
+    }
   }
 
   loadSuggestions(): void {

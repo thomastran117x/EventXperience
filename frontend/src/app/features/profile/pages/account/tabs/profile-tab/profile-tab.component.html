@@ -214,7 +214,8 @@
             </p>
             <p *ngIf="!p.CanChangeUsername" class="mt-2 text-sm text-faint">
               You can change it again on
-              {{ p.UsernameChangeAvailableAtUtc | date: 'longDate' : 'UTC' }} UTC.
+              {{ p.UsernameChangeAvailableAtUtc | date: 'longDate' : 'UTC' }} UTC. Until then you
+              can still change its capitalisation, which keeps the same handle.
             </p>
             <p *ngIf="p.CanChangeUsername" class="mt-2 text-sm text-faint">
               After changing it, your username and previous handle are locked for the configured
@@ -225,10 +226,9 @@
             *ngIf="!usernameChangeRequested"
             type="button"
             (click)="startUsernameChange()"
-            [disabled]="!p.CanChangeUsername"
-            class="inline-flex flex-none items-center justify-center rounded-2xl border border-line-strong px-4 py-2 text-sm font-semibold text-muted transition hover:bg-glass-strong disabled:cursor-not-allowed disabled:opacity-50"
+            class="inline-flex flex-none items-center justify-center rounded-2xl border border-line-strong px-4 py-2 text-sm font-semibold text-muted transition hover:bg-glass-strong"
           >
-            Change username
+            {{ casingOnly ? 'Change capitalisation' : 'Change username' }}
           </button>
         </div>
 
@@ -289,7 +289,13 @@
                 A username is required.
               </p>
 
+              <p *ngIf="casingOnly" class="text-sm text-muted">
+                Your cooldown is still running, so only the capitalisation can change &mdash; the
+                handle itself stays the same.
+              </p>
+
               <app-username-suggestions
+                *ngIf="!casingOnly"
                 [suggestions]="suggestions"
                 [loading]="suggestionsLoading"
                 [selected]="normalizedUsername"

@@ -35,7 +35,8 @@ namespace backend.main.features.auth
         /// </remarks>
         Task<IReadOnlySet<string>> FindUnavailableUsernamesAsync(
             IReadOnlyCollection<string> usernames,
-            DateTime utcNow);
+            DateTime utcNow,
+            CancellationToken cancellationToken = default);
         Task<UserOAuthRecord?> GetOAuthByEmailAsync(string email);
         Task<UserOAuthRecord?> GetOAuthByMicrosoftIdAsync(string microsoftId);
         Task<UserOAuthRecord?> GetOAuthByGoogleIdAsync(string googleId);

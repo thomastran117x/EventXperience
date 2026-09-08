@@ -70,7 +70,7 @@ public sealed class UsernameAvailabilityService : IUsernameAvailabilityService
         if (mustQuery.Count == 0)
             return EmptyResult;
 
-        return await _repository.FindUnavailableUsernamesAsync(mustQuery, utcNow);
+        return await _repository.FindUnavailableUsernamesAsync(mustQuery, utcNow, cancellationToken);
     }
 
     public async Task MarkTakenAsync(

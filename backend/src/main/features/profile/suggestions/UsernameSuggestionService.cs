@@ -67,6 +67,11 @@ public sealed class UsernameSuggestionService : IUsernameSuggestionService
         {
             for (var draw = 0; draw < DrawsPerTier && accepted.Count < SuggestionCount; draw++)
             {
+                // Rechecked per round rather than only on entry: a draw can make one database call
+                // per tier, so a caller that disconnected on the first would otherwise keep paying
+                // for the rest.
+                cancellationToken.ThrowIfCancellationRequested();
+
                 // The last round of the last tier drops the "no repeated adjective or noun" rule, so
                 // wanting variety can never itself be the reason we hand back fewer than three.
                 var requireDistinctWords =

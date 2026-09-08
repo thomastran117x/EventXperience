@@ -149,11 +149,24 @@ describe('ProfileTabComponent', () => {
     expect(component.success).toContain('@new-name');
   });
 
-  it('does not open the rename flow while cooldown is active', () => {
+  /// Previously the whole form was gated on CanChangeUsername. The server allows a casing-only
+  /// edit during the cooldown — the lookup key never moves, so nothing is released or reserved —
+  /// and gating the form made that branch unreachable, leaving someone unable to fix their own
+  /// capitalisation for a month.
+  it('opens the rename flow during cooldown, restricted to a casing change', () => {
     component.profile = makeProfile({
       CanChangeUsername: false,
       UsernameChangeAvailableAtUtc: '2026-09-14T12:00:00Z',
     });
+
+    component.startUsernameChange();
+
+    expect(component.usernameChangeRequested).toBeTrue();
+    expect(component.casingOnly).toBeTrue();
+  });
+
+  it('does not open the rename flow before the profile has loaded', () => {
+    component.profile = null;
 
     component.startUsernameChange();
 
@@ -556,4 +569,55 @@ describe('ProfileTabComponent', () => {
       expect(component.emailForm.controls.newEmail.value).toBe('');
     });
   });
+
+  /// The server treats a casing-only edit as free of the rename cooldown, because the lookup key
+  /// never moves. Gating the whole form on CanChangeUsername made that branch unreachable and left
+  /// someone unable to fix their own capitalisation for a month.
+  it('opens the rename form during the cooldown, for a casing-only change', fakeAsync(() => {
+    profileService.getMyProfile.and.returnValue(
+      of(
+        makeProfile({
+          CanChangeUsername: false,
+          UsernameChangeAvailableAtUtc: '2026-10-01T00:00:00Z',
+        }),
+      ),
+    );
+    const fixture = TestBed.createComponent(ProfileTabComponent);
+    const component = fixture.componentInstance;
+    fixture.detectChanges();
+    tick();
+
+    component.startUsernameChange();
+
+    expect(component.casingOnly).toBeTrue();
+    expect(component.usernameChangeRequested).toBeTrue();
+  }));
+
+  /// A different name is not on offer during the cooldown, so spending a suggestion request would
+  /// buy the user nothing.
+  it('does not draw suggestions while only the capitalisation can change', fakeAsync(() => {
+    profileService.getMyProfile.and.returnValue(of(makeProfile({ CanChangeUsername: false })));
+    const fixture = TestBed.createComponent(ProfileTabComponent);
+    const component = fixture.componentInstance;
+    fixture.detectChanges();
+    tick();
+
+    component.startUsernameChange();
+
+    expect(auth.getUsernameSuggestions).not.toHaveBeenCalled();
+    expect(component.suggestions).toEqual([]);
+  }));
+
+  it('draws suggestions when a full rename is available', fakeAsync(() => {
+    const fixture = TestBed.createComponent(ProfileTabComponent);
+    const component = fixture.componentInstance;
+    fixture.detectChanges();
+    tick();
+
+    component.startUsernameChange();
+    tick();
+
+    expect(component.casingOnly).toBeFalse();
+    expect(auth.getUsernameSuggestions).toHaveBeenCalled();
+  }));
 });

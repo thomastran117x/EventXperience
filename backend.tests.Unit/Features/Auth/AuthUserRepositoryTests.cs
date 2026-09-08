@@ -678,6 +678,52 @@ public class AuthUserRepositoryTests
         created.UsernameDisplay.Should().Be("realname");
     }
 
+    /// <summary>
+    /// UserListRecord.UsernameDisplay is non-nullable, and the slim projection is the default one:
+    /// it backs GetByIdsAsync, which feeds club post, discussion, comment, review and follow author
+    /// lookups. A projection that skipped the column would leave a declared-non-null field null on
+    /// every non-admin read, so both detail levels are checked rather than just the admin one.
+    /// </summary>
+    [Theory]
+    [InlineData(UserReadDetailLevel.Slim)]
+    [InlineData(UserReadDetailLevel.Admin)]
+    public async Task GetByIdsAsync_ShouldProjectTheDisplayForm(UserReadDetailLevel detail)
+    {
+        await using var harness = await AuthUserRepositoryHarness.CreateAsync();
+        var created = await harness.Repository.CreateUserAsync(new User
+        {
+            Email = "listed@example.com",
+            Username = "ThomasT",
+            Password = "hashed-password",
+            Usertype = "participant"
+        });
+
+        var listed = await harness.Repository.GetByIdsAsync([created.Id], detail);
+
+        listed.Should().ContainSingle();
+        listed[0].Username.Should().Be("thomast");
+        listed[0].UsernameDisplay.Should().Be("ThomasT");
+    }
+
+    /// <summary>
+    /// A row that predates the display column reads back with the lookup key rather than null, so
+    /// the non-nullable contract holds for the backfill population too.
+    /// </summary>
+    [Fact]
+    public async Task GetByIdsAsync_ShouldFallBackToTheUsername_WhenNoDisplayWasStored()
+    {
+        await using var harness = await AuthUserRepositoryHarness.CreateAsync();
+        var userId = await harness.SeedUserAsync(
+            email: "legacy-list@example.com", username: "legacy-name");
+        var stored = await harness.Db.Users.SingleAsync(user => user.Id == userId);
+        stored.UsernameDisplay = null;
+        await harness.Db.SaveChangesAsync();
+
+        var listed = await harness.Repository.GetByIdsAsync([userId]);
+
+        listed[0].UsernameDisplay.Should().Be("legacy-name");
+    }
+
     private sealed class AuthUserRepositoryHarness : IAsyncDisposable
     {
         private readonly SqliteConnection _connection;

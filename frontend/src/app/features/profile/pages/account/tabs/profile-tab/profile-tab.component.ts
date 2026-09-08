@@ -242,8 +242,16 @@ export class ProfileTabComponent implements OnInit {
   suggestions: UsernameSuggestion[] = [];
   suggestionsLoading = false;
 
+  /**
+   * True while the account is inside the rename cooldown, where the only change the server will
+   * accept is to the capitalisation of the name already held.
+   */
+  get casingOnly(): boolean {
+    return !!this.profile && !this.profile.CanChangeUsername;
+  }
+
   startUsernameChange(): void {
-    if (!this.profile?.CanChangeUsername) return;
+    if (!this.profile) return;
     this.usernameChangeRequested = true;
     this.usernameMfaVerified = false;
     this.usernameForm.setValue({
@@ -251,9 +259,16 @@ export class ProfileTabComponent implements OnInit {
     });
     this.error = '';
     this.success = '';
-    // Fetched here rather than on tab load, so merely viewing the account page spends nothing
-    // against the rate-limit budget.
-    this.loadSuggestions();
+
+    // Deliberately reachable during the cooldown. A casing-only edit moves no lookup key, so the
+    // server treats it as free of the cooldown; gating the whole form on CanChangeUsername would
+    // make that branch unreachable and leave someone unable to fix their own capitalisation for a
+    // month. Suggestions are skipped in that state — a different name is not on offer.
+    if (!this.casingOnly) {
+      // Fetched here rather than on tab load, so merely viewing the account page spends nothing
+      // against the rate-limit budget.
+      this.loadSuggestions();
+    }
   }
 
   loadSuggestions(): void {

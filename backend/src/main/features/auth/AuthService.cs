@@ -193,13 +193,20 @@ namespace backend.main.features.auth
                     throw new ConflictException($"An account is already registered with the email: {user.Email}");
                 if (string.IsNullOrWhiteSpace(user.Username))
                     throw new BadRequestException("A username is required to complete signup.");
-                // Prefer the display form off the token: it normalises to the same key and still
-                // carries the casing. A token minted before this column existed has none, and falls
-                // back to the username, which is exactly the pre-existing behaviour.
-                var verifiedUsername = UsernamePolicy.NormalizeAndValidateWithDisplay(
-                    string.IsNullOrWhiteSpace(user.UsernameDisplay) ? user.Username : user.UsernameDisplay);
+                // The username is derived from Username, never from UsernameDisplay. ComputeOtpProof
+                // deliberately does not bind the display form — adding it would invalidate every
+                // challenge minted before it existed — so deriving the account name from it would
+                // put the value that decides the username outside the integrity check.
+                //
+                // The display is therefore only adopted when it agrees with the bound username,
+                // which is exactly the casing it was stored with at signup. Anything else falls
+                // back, the same repair CreateUserAsync applies as a choke point.
+                var verifiedUsername = UsernamePolicy.NormalizeAndValidateWithDisplay(user.Username);
                 user.Username = verifiedUsername.Username;
-                user.UsernameDisplay = verifiedUsername.Display;
+                user.UsernameDisplay =
+                    UsernamePolicy.IsValidDisplayFor(verifiedUsername.Username, user.UsernameDisplay)
+                        ? user.UsernameDisplay
+                        : verifiedUsername.Display;
                 if (await _usernameAvailability.IsUnavailableAsync(user.Username, DateTime.UtcNow))
                     throw new UsernameTakenException(user.Username);
 
@@ -241,13 +248,20 @@ namespace backend.main.features.auth
                     throw new ConflictException($"An account is already registered with the email: {user.Email}");
                 if (string.IsNullOrWhiteSpace(user.Username))
                     throw new BadRequestException("A username is required to complete signup.");
-                // Prefer the display form off the token: it normalises to the same key and still
-                // carries the casing. A token minted before this column existed has none, and falls
-                // back to the username, which is exactly the pre-existing behaviour.
-                var verifiedUsername = UsernamePolicy.NormalizeAndValidateWithDisplay(
-                    string.IsNullOrWhiteSpace(user.UsernameDisplay) ? user.Username : user.UsernameDisplay);
+                // The username is derived from Username, never from UsernameDisplay. ComputeOtpProof
+                // deliberately does not bind the display form — adding it would invalidate every
+                // challenge minted before it existed — so deriving the account name from it would
+                // put the value that decides the username outside the integrity check.
+                //
+                // The display is therefore only adopted when it agrees with the bound username,
+                // which is exactly the casing it was stored with at signup. Anything else falls
+                // back, the same repair CreateUserAsync applies as a choke point.
+                var verifiedUsername = UsernamePolicy.NormalizeAndValidateWithDisplay(user.Username);
                 user.Username = verifiedUsername.Username;
-                user.UsernameDisplay = verifiedUsername.Display;
+                user.UsernameDisplay =
+                    UsernamePolicy.IsValidDisplayFor(verifiedUsername.Username, user.UsernameDisplay)
+                        ? user.UsernameDisplay
+                        : verifiedUsername.Display;
                 if (await _usernameAvailability.IsUnavailableAsync(user.Username, DateTime.UtcNow))
                     throw new UsernameTakenException(user.Username);
 
