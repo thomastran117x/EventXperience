@@ -406,7 +406,8 @@ public class AuthEndpointsTests
 
         var pending = await app.PostJsonWithCsrfAsync("/api/auth/google", new GoogleRequest
         {
-            Token = "google-username-token"
+            Token = "google-username-token",
+            Transport = SessionTransportResolver.ApiValue
         });
         var pendingBody = await app.ReadApiResponseAsync<OAuthAuthenticationResponse>(pending);
         pendingBody.Data!.RequiresRoleSelection.Should().BeTrue();
@@ -464,7 +465,8 @@ public class AuthEndpointsTests
 
         var pending = await app.PostJsonWithCsrfAsync("/api/auth/google", new GoogleRequest
         {
-            Token = "google-retry-token"
+            Token = "google-retry-token",
+            Transport = SessionTransportResolver.ApiValue
         });
         var signupToken = (await app.ReadApiResponseAsync<OAuthAuthenticationResponse>(pending))
             .Data!.SignupToken!;
@@ -501,18 +503,13 @@ public class AuthEndpointsTests
     {
         await using var app = await AuthApiTestApp.CreateAsync();
 
-        await app.SeedUserAsync("legacy@example.com", username: "Legacy..Name");
+        // Repeated separators and mixed case: exactly what the backfill migration could emit.
+        var legacy = await app.SeedUserAsync("legacy@example.com", username: "Legacy__Name");
+        await app.SeedKnownDeviceAsync(legacy.Id, "legacy-device");
 
-        var login = await app.PostJsonWithCsrfAsync("/api/auth/login", new LoginRequest
-        {
-            Username = "Legacy..Name",
-            Password = "Password123!",
-            Captcha = "captcha",
-            Transport = SessionTransportResolver.ApiValue
-        });
-        login.StatusCode.Should().Be(HttpStatusCode.OK);
+        await app.LoginApiAsync("Legacy__Name", trustedDeviceToken: "legacy-device");
 
-        var profile = await app.Client.GetAsync("/api/profile/Legacy..Name");
+        var profile = await app.Client.GetAsync("/api/profile/Legacy__Name");
         profile.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
