@@ -170,7 +170,9 @@ namespace backend.main.features.profile.email
                 case EmailChangeStatus.Unavailable:
                     throw new ConflictException("That email is already in use.");
                 case EmailChangeStatus.Stale:
-                    await _tokenService.CancelPendingEmailChangeAsync(pending.UserId);
+                    // No cleanup: consuming the proof already deleted it. Cancelling by account
+                    // here would instead delete a newer, still-valid request that another session
+                    // may have created in the meantime.
                     throw new UnauthorizedException(
                         "This email change is no longer valid because the account's credentials changed."
                     );
@@ -192,10 +194,23 @@ namespace backend.main.features.profile.email
             await _tokenService.RevokeAllRefreshSessionsAsync(pending.UserId);
             await _refreshCache.RemoveAsync(GetUserCacheKey(pending.UserId));
 
-            await _invitationService.RelinkForEmailChangeAsync(
-                pending.UserId,
-                previousNormalizedEmail,
-                normalizedEmail);
+            // Best effort, like the notifications below: the address has already changed and the
+            // proof has already been consumed, so reporting failure here would tell the caller the
+            // change did not happen while leaving them unable to retry - the link is spent and the
+            // account now answers to the new address. Losing a re-link costs visibility of some
+            // invitations, not access.
+            try
+            {
+                await _invitationService.RelinkForEmailChangeAsync(
+                    pending.UserId,
+                    previousNormalizedEmail,
+                    normalizedEmail);
+            }
+            catch (Exception e)
+            {
+                Logger.Warn(
+                    $"[EmailChangeService] Re-linking invitations for {pending.UserId} failed: {e}");
+            }
 
             // Best effort, and after the change has committed: a mail failure must not roll back
             // an address the user has already proved and been signed out for.

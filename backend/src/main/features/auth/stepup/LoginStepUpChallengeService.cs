@@ -370,14 +370,6 @@ namespace backend.main.features.auth.stepup
                     );
                 }
 
-                await _deviceTrustService.TrustAsync(
-                    state.UserId,
-                    state.TrustedDeviceId,
-                    state.DeviceType,
-                    state.ClientName,
-                    state.IpAddress
-                );
-
                 var userToken = await _authSessionService.IssueAsync(
                     user,
                     state.Transport,
@@ -401,6 +393,18 @@ namespace backend.main.features.auth.stepup
                         "This sign-in verification challenge is no longer valid. Please sign in again."
                     );
                 }
+
+                // Deliberately after the re-check rather than before the session is issued.
+                // Trusting a device persists for 90 days and lets it skip MFA, and an email change
+                // leaves the password intact - so granting trust on a path that then rejects the
+                // sign-in would hand a lasting bypass to whoever completed the stale challenge.
+                await _deviceTrustService.TrustAsync(
+                    state.UserId,
+                    state.TrustedDeviceId,
+                    state.DeviceType,
+                    state.ClientName,
+                    state.IpAddress
+                );
 
                 await DeleteStateAsync(state);
 

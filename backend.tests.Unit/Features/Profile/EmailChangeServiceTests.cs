@@ -285,7 +285,9 @@ public class EmailChangeServiceTests
         await act.Should().ThrowAsync<UnauthorizedException>()
             .WithMessage("*credentials changed*");
 
-        harness.Tokens.Verify(t => t.CancelPendingEmailChangeAsync(UserId), Times.Once);
+        // Consuming the proof already deleted it, so there is nothing to clean up - and an
+        // account-wide cancel here would delete a newer request another session may have made.
+        harness.Tokens.Verify(t => t.CancelPendingEmailChangeAsync(UserId), Times.Never);
     }
 
     /// <summary>
