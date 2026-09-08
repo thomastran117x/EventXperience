@@ -22,6 +22,7 @@ public class EmailChangeServiceTests
     private const string CurrentEmail = "ada@example.com";
     private const string NewEmail = "ada.lovelace@example.com";
     private const string CorrectPassword = "correct-horse";
+    private const int AuthVersion = 3;
 
     // ------------------------------------------------------------------ request
 
@@ -48,6 +49,12 @@ public class EmailChangeServiceTests
         harness.Repository.Verify(
             r => r.ChangeEmailAsync(It.IsAny<int>(), It.IsAny<string>(), It.IsAny<DateTime>()),
             Times.Never);
+
+        // The proof is stamped with the version it was issued against, so a later credential
+        // rotation can invalidate it.
+        harness.Tokens.Verify(
+            t => t.GenerateEmailChangeArtifactsAsync(UserId, AuthVersion, NewEmail),
+            Times.Once);
     }
 
     [Fact]
@@ -77,7 +84,8 @@ public class EmailChangeServiceTests
 
         await act.Should().ThrowAsync<BadRequestException>();
         harness.Tokens.Verify(
-            t => t.GenerateEmailChangeArtifactsAsync(It.IsAny<int>(), It.IsAny<string>()),
+            t => t.GenerateEmailChangeArtifactsAsync(
+                It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>()),
             Times.Never);
     }
 
@@ -169,7 +177,7 @@ public class EmailChangeServiceTests
         harness.WithPasswordAccount();
         harness.WithSuccessfulChange();
 
-        await harness.Service.ConfirmAsync(new PendingEmailChange(UserId, NewEmail, DateTime.UtcNow));
+        await harness.Service.ConfirmAsync(new PendingEmailChange(UserId, AuthVersion, NewEmail, DateTime.UtcNow));
 
         harness.Repository.Verify(
             r => r.ChangeEmailAsync(UserId, NewEmail, harness.UtcNow),
@@ -188,7 +196,7 @@ public class EmailChangeServiceTests
         harness.WithPasswordAccount();
         harness.WithSuccessfulChange();
 
-        await harness.Service.ConfirmAsync(new PendingEmailChange(UserId, NewEmail, DateTime.UtcNow));
+        await harness.Service.ConfirmAsync(new PendingEmailChange(UserId, AuthVersion, NewEmail, DateTime.UtcNow));
 
         harness.Availability.Verify(
             a => a.MarkRegisteredAsync(NewEmail, It.IsAny<CancellationToken>()),
@@ -202,7 +210,7 @@ public class EmailChangeServiceTests
         harness.WithPasswordAccount();
         harness.WithSuccessfulChange();
 
-        await harness.Service.ConfirmAsync(new PendingEmailChange(UserId, NewEmail, DateTime.UtcNow));
+        await harness.Service.ConfirmAsync(new PendingEmailChange(UserId, AuthVersion, NewEmail, DateTime.UtcNow));
 
         harness.Invitations.Verify(
             i => i.RelinkForEmailChangeAsync(UserId, CurrentEmail, NewEmail),
@@ -221,7 +229,7 @@ public class EmailChangeServiceTests
         harness.WithRegisteredAddress(NewEmail);
 
         var act = () => harness.Service.ConfirmAsync(
-            new PendingEmailChange(UserId, NewEmail, DateTime.UtcNow));
+            new PendingEmailChange(UserId, AuthVersion, NewEmail, DateTime.UtcNow));
 
         await act.Should().ThrowAsync<ConflictException>();
         harness.Repository.Verify(
@@ -239,9 +247,39 @@ public class EmailChangeServiceTests
             .ReturnsAsync(new EmailChangeRecord(EmailChangeStatus.Unavailable));
 
         var act = () => harness.Service.ConfirmAsync(
-            new PendingEmailChange(UserId, NewEmail, DateTime.UtcNow));
+            new PendingEmailChange(UserId, AuthVersion, NewEmail, DateTime.UtcNow));
 
         await act.Should().ThrowAsync<ConflictException>();
+    }
+
+    /// <summary>
+    /// Rotating credentials cancels a pending change.
+    /// </summary>
+    /// <remarks>
+    /// This is the whole point of the heads-up sent to the address being replaced: it tells its
+    /// owner to change their password if they did not request this. That advice is only worth
+    /// anything if it actually revokes the outstanding proof, so a request made from a stolen
+    /// session cannot still be redeemed afterwards.
+    /// </remarks>
+    [Fact]
+    public async Task ConfirmAsync_ShouldRefuse_WhenCredentialsRotatedSinceTheRequest()
+    {
+        var harness = new Harness();
+        harness.WithPasswordAccount();
+        harness.WithSuccessfulChange();
+
+        // The request was made against the previous auth version.
+        var stale = new PendingEmailChange(UserId, AuthVersion - 1, NewEmail, DateTime.UtcNow);
+
+        var act = () => harness.Service.ConfirmAsync(stale);
+
+        await act.Should().ThrowAsync<UnauthorizedException>()
+            .WithMessage("*credentials changed*");
+
+        harness.Repository.Verify(
+            r => r.ChangeEmailAsync(It.IsAny<int>(), It.IsAny<string>(), It.IsAny<DateTime>()),
+            Times.Never);
+        harness.Tokens.Verify(t => t.CancelPendingEmailChangeAsync(UserId), Times.Once);
     }
 
     [Fact]
@@ -251,7 +289,7 @@ public class EmailChangeServiceTests
         harness.WithPasswordAccount(isDisabled: true);
 
         var act = () => harness.Service.ConfirmAsync(
-            new PendingEmailChange(UserId, NewEmail, DateTime.UtcNow));
+            new PendingEmailChange(UserId, AuthVersion, NewEmail, DateTime.UtcNow));
 
         await act.Should().ThrowAsync<ForbiddenException>();
     }
@@ -265,7 +303,7 @@ public class EmailChangeServiceTests
             .ReturnsAsync((UserAuthRecord?)null);
 
         var act = () => harness.Service.ConfirmAsync(
-            new PendingEmailChange(UserId, NewEmail, DateTime.UtcNow));
+            new PendingEmailChange(UserId, AuthVersion, NewEmail, DateTime.UtcNow));
 
         await act.Should().ThrowAsync<UnauthorizedException>();
     }
@@ -282,7 +320,7 @@ public class EmailChangeServiceTests
             .ThrowsAsync(new InvalidOperationException("broker down"));
 
         var act = () => harness.Service.ConfirmAsync(
-            new PendingEmailChange(UserId, NewEmail, DateTime.UtcNow));
+            new PendingEmailChange(UserId, AuthVersion, NewEmail, DateTime.UtcNow));
 
         // The change has already committed and the user has already been signed out; a mail
         // failure cannot undo either.
@@ -311,7 +349,8 @@ public class EmailChangeServiceTests
         public Harness()
         {
             Tokens
-                .Setup(t => t.GenerateEmailChangeArtifactsAsync(It.IsAny<int>(), It.IsAny<string>()))
+                .Setup(t => t.GenerateEmailChangeArtifactsAsync(
+                    It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>()))
                 .ReturnsAsync(new VerificationArtifacts
                 {
                     LinkToken = "link-token",
@@ -351,7 +390,7 @@ public class EmailChangeServiceTests
                     Usertype = "user",
                     Name = "Ada",
                     IsDisabled = isDisabled,
-                    AuthVersion = 1,
+                    AuthVersion = AuthVersion,
                 });
 
         public void WithRegisteredAddress(string email) =>

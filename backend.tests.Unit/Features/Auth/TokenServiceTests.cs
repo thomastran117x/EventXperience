@@ -42,10 +42,11 @@ public class TokenServiceTests
     {
         var service = new TokenService(new InMemoryCacheService());
 
-        var artifacts = await service.GenerateEmailChangeArtifactsAsync(23, "new@example.com");
+        var artifacts = await service.GenerateEmailChangeArtifactsAsync(23, 1, "new@example.com");
         var pending = await service.ConsumeEmailChangeTokenAsync(artifacts.LinkToken);
 
         pending.UserId.Should().Be(23);
+        pending.AuthVersion.Should().Be(1);
         pending.NewEmail.Should().Be("new@example.com");
     }
 
@@ -54,12 +55,13 @@ public class TokenServiceTests
     {
         var service = new TokenService(new InMemoryCacheService());
 
-        var artifacts = await service.GenerateEmailChangeArtifactsAsync(23, "new@example.com");
+        var artifacts = await service.GenerateEmailChangeArtifactsAsync(23, 1, "new@example.com");
         var pending = await service.ConsumeEmailChangeOtpAsync(
             artifacts.OtpChallenge.Code,
             artifacts.OtpChallenge.Challenge);
 
         pending.UserId.Should().Be(23);
+        pending.AuthVersion.Should().Be(1);
         pending.NewEmail.Should().Be("new@example.com");
     }
 
@@ -67,7 +69,7 @@ public class TokenServiceTests
     public async Task ConsumeEmailChangeTokenAsync_ShouldRejectAReusedToken()
     {
         var service = new TokenService(new InMemoryCacheService());
-        var artifacts = await service.GenerateEmailChangeArtifactsAsync(23, "new@example.com");
+        var artifacts = await service.GenerateEmailChangeArtifactsAsync(23, 1, "new@example.com");
 
         await service.ConsumeEmailChangeTokenAsync(artifacts.LinkToken);
         var act = () => service.ConsumeEmailChangeTokenAsync(artifacts.LinkToken);
@@ -96,7 +98,7 @@ public class TokenServiceTests
     public async Task GetPendingEmailChangeAsync_ShouldReportTheAddressAwaitingConfirmation()
     {
         var service = new TokenService(new InMemoryCacheService());
-        await service.GenerateEmailChangeArtifactsAsync(23, "new@example.com");
+        await service.GenerateEmailChangeArtifactsAsync(23, 1, "new@example.com");
 
         var pending = await service.GetPendingEmailChangeAsync(23);
 
@@ -108,7 +110,7 @@ public class TokenServiceTests
     public async Task GetPendingEmailChangeAsync_ShouldReportNothing_AfterConfirmation()
     {
         var service = new TokenService(new InMemoryCacheService());
-        var artifacts = await service.GenerateEmailChangeArtifactsAsync(23, "new@example.com");
+        var artifacts = await service.GenerateEmailChangeArtifactsAsync(23, 1, "new@example.com");
 
         await service.ConsumeEmailChangeTokenAsync(artifacts.LinkToken);
 
@@ -119,7 +121,7 @@ public class TokenServiceTests
     public async Task CancelPendingEmailChangeAsync_ShouldMakeTheLinkUnusable()
     {
         var service = new TokenService(new InMemoryCacheService());
-        var artifacts = await service.GenerateEmailChangeArtifactsAsync(23, "new@example.com");
+        var artifacts = await service.GenerateEmailChangeArtifactsAsync(23, 1, "new@example.com");
 
         await service.CancelPendingEmailChangeAsync(23);
 
@@ -136,14 +138,41 @@ public class TokenServiceTests
     public async Task GenerateEmailChangeArtifactsAsync_ShouldInvalidateAnEarlierRequest()
     {
         var service = new TokenService(new InMemoryCacheService());
-        var first = await service.GenerateEmailChangeArtifactsAsync(23, "first@example.com");
+        var first = await service.GenerateEmailChangeArtifactsAsync(23, 1, "first@example.com");
 
-        await service.GenerateEmailChangeArtifactsAsync(23, "second@example.com");
+        await service.GenerateEmailChangeArtifactsAsync(23, 1, "second@example.com");
 
         var act = () => service.ConsumeEmailChangeTokenAsync(first.LinkToken);
         await act.Should().ThrowAsync<UnauthorizedException>();
 
         (await service.GetPendingEmailChangeAsync(23))!.NewEmail.Should().Be("second@example.com");
+    }
+
+    /// <summary>
+    /// Two requests racing must not leave a redeemable proof that nothing can reach.
+    /// </summary>
+    /// <remarks>
+    /// Each pending change is stored under its own target address, so without serialization both
+    /// calls clear the same empty index, both mint a token, and only the later one stays indexed -
+    /// leaving the earlier proof live but invisible to a later cancel. The lock makes the second
+    /// request either wait its turn or be refused, never overlap.
+    /// </remarks>
+    [Fact]
+    public async Task GenerateEmailChangeArtifactsAsync_ShouldNotLeaveAnUnreachableProof_WhenRequestsRace()
+    {
+        var service = new TokenService(new InMemoryCacheService());
+
+        var first = await service.GenerateEmailChangeArtifactsAsync(23, 1, "first@example.com");
+        var second = await service.GenerateEmailChangeArtifactsAsync(23, 1, "second@example.com");
+
+        // Whatever the interleaving, cancelling has to reach every proof the account holds.
+        await service.CancelPendingEmailChangeAsync(23);
+
+        var firstAct = () => service.ConsumeEmailChangeTokenAsync(first.LinkToken);
+        await firstAct.Should().ThrowAsync<UnauthorizedException>();
+
+        var secondAct = () => service.ConsumeEmailChangeTokenAsync(second.LinkToken);
+        await secondAct.Should().ThrowAsync<UnauthorizedException>();
     }
 
     /// <summary>

@@ -206,6 +206,50 @@ public class EmailChangeEndpointsTests
         confirm.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
+    /// <summary>
+    /// Changing the password cancels a pending email change, end to end.
+    /// </summary>
+    /// <remarks>
+    /// The heads-up mailed to the address being replaced tells its owner to change their password
+    /// if they did not request the change. This is the test that the advice actually works: a
+    /// request made from a stolen session must stop being redeemable the moment the real owner
+    /// rotates their credentials.
+    /// </remarks>
+    [Fact]
+    public async Task Confirm_ShouldRefuse_AfterThePasswordWasChanged()
+    {
+        await using var app = await AuthApiTestApp.CreateAsync();
+        var session = await SignInAsync(app, "rotated@example.com", "rotated-device");
+        await app.MarkNotificationBoundaryAsync();
+
+        await RequestChangeAsync(app, session.AccessToken, "attacker@example.com");
+        var verifyMail = await app.WaitForEmailAsync(message =>
+            message.Type == EmailMessageType.EmailChangeVerify
+            && message.Email == "attacker@example.com");
+
+        var changePassword = await app.PostJsonWithBearerAndCsrfAsync(
+            "/api/profile/change-password",
+            new ChangePasswordAuthenticatedRequest
+            {
+                CurrentPassword = "Password123!",
+                NewPassword = "RecoveredPassword456!"
+            },
+            session.AccessToken);
+        changePassword.StatusCode.Should().Be(
+            HttpStatusCode.OK,
+            await app.DescribeFailureAsync(changePassword));
+
+        var confirm = await app.PostJsonWithCsrfAsync(
+            "/api/auth/verify/email-change",
+            new EmailChangeConfirmationRequest { Token = verifyMail.Token });
+
+        confirm.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        // The account keeps the address it started with.
+        (await app.FindUserByEmailAsync("rotated@example.com")).Should().NotBeNull();
+        (await app.FindUserByEmailAsync("attacker@example.com")).Should().BeNull();
+    }
+
     [Fact]
     public async Task Confirm_ShouldRejectAReusedToken()
     {

@@ -172,7 +172,7 @@ public sealed class EmailTemplateRenderer : IEmailContentRenderer
                 ],
                 Cta: null,
                 Code: null,
-                MutedNote: "If you didn't request this, you don't need to do anything - the change cannot complete without access to the new address. We'd still recommend changing your password."),
+                MutedNote: "If you didn't request this, change your password now - that cancels this request and signs out every device. The change cannot complete without access to the new address, but a request you didn't make means someone else is in your account."),
 
             EmailMessageType.EmailChangeVerify => new Content(
                 Subject: "Confirm your new email address",

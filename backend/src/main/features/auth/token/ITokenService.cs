@@ -41,6 +41,7 @@ namespace backend.main.features.auth.token
         public Task<string?> VerificationTokenExist(string email, VerificationPurpose purpose);
         public Task<VerificationArtifacts> GenerateEmailChangeArtifactsAsync(
             int userId,
+            int authVersion,
             string newEmail
         );
         public Task<PendingEmailChange> ConsumeEmailChangeTokenAsync(string token);

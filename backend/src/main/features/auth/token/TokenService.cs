@@ -36,6 +36,7 @@ namespace backend.main.features.auth.token
         private readonly TimeSpan VERIFY_TTL = TimeSpan.FromMinutes(30);
         private const int MAX_OTP_ATTEMPTS = 5;
         private const string PlaceholderUsertype = "placeholder";
+        private static readonly TimeSpan EmailChangeLockTtl = TimeSpan.FromSeconds(10);
 
         public TokenService(ICacheService cacheService)
         {
@@ -387,6 +388,7 @@ namespace backend.main.features.auth.token
                 {
                     Email = user.Email,
                     UserId = payload.UserId,
+                    AuthVersion = payload.AuthVersion,
                     Purpose = purpose,
                     LinkToken = linkToken,
                     OtpCode = otpCode,
@@ -523,6 +525,7 @@ namespace backend.main.features.auth.token
                 {
                     Email = state.Email,
                     UserId = state.UserId,
+                    AuthVersion = state.AuthVersion,
                     Password = state.Password,
                     Usertype = state.Usertype,
                     Username = state.Username,
@@ -563,20 +566,30 @@ namespace backend.main.features.auth.token
         /// </summary>
         public async Task<VerificationArtifacts> GenerateEmailChangeArtifactsAsync(
             int userId,
+            int authVersion,
             string newEmail
         )
         {
+            // Cancel, generate and index have to happen as one unit. Each pending change is stored
+            // under its own target address, so two concurrent requests would otherwise both clear
+            // the same (empty) index, both mint a redeemable token, and leave only the later one
+            // indexed - the earlier proof still live but invisible to a later cancel.
+            var lockValue = Convert.ToBase64String(RandomNumberGenerator.GetBytes(16));
+            var lockKey = EmailChangeLockKey(userId);
+            if (!await _cacheService.AcquireLockAsync(lockKey, lockValue, EmailChangeLockTtl))
+                throw new ConflictException(
+                    "Another email change request is already being processed."
+                );
+
             try
             {
-                // Drop whatever this account already had in flight. State is keyed by the target
-                // address, so re-requesting against a different address would otherwise leave the
-                // previous one redeemable for the rest of its TTL.
                 await CancelPendingEmailChangeAsync(userId);
 
                 var artifacts = await GenerateVerificationArtifactsAsync(
                     new User
                     {
                         Id = userId,
+                        AuthVersion = authVersion,
                         Email = newEmail,
                         Usertype = PlaceholderUsertype,
                     },
@@ -603,6 +616,10 @@ namespace backend.main.features.auth.token
                 Logger.Error($"[TokenService] GenerateEmailChangeArtifactsAsync failed: {e}");
                 throw new InternalServerErrorException();
             }
+            finally
+            {
+                await _cacheService.ReleaseLockAsync(lockKey, lockValue);
+            }
         }
 
         public async Task<PendingEmailChange> ConsumeEmailChangeTokenAsync(string token)
@@ -623,6 +640,9 @@ namespace backend.main.features.auth.token
                 if (payload.UserId is not int userId)
                     throw new UnauthorizedException("Email change token is missing its account.");
 
+                if (payload.AuthVersion is not int authVersion)
+                    throw new UnauthorizedException("Email change token is missing its account.");
+
                 var state = await GetVerificationStateAsync(payload.Email, payload.Purpose);
                 var expiresAtUtc = state?.ExpiresAtUtc ?? DateTime.UtcNow;
 
@@ -636,7 +656,7 @@ namespace backend.main.features.auth.token
 
                 _ = await _cacheService.DeleteKeyAsync(EmailChangeIndexKey(userId));
 
-                return new PendingEmailChange(userId, payload.Email, expiresAtUtc);
+                return new PendingEmailChange(userId, authVersion, payload.Email, expiresAtUtc);
             }
             catch (Exception e)
             {
@@ -663,6 +683,9 @@ namespace backend.main.features.auth.token
                     throw new UnauthorizedException("Verification challenge purpose mismatch.");
 
                 if (state.UserId is not int userId)
+                    throw new UnauthorizedException("Email change challenge is missing its account.");
+
+                if (state.AuthVersion is not int authVersion)
                     throw new UnauthorizedException("Email change challenge is missing its account.");
 
                 if (state.OtpChallenge != challenge)
@@ -698,7 +721,7 @@ namespace backend.main.features.auth.token
                 _ = await _cacheService.DeleteKeyAsync(OtpAttemptKey(challenge));
                 _ = await _cacheService.DeleteKeyAsync(EmailChangeIndexKey(userId));
 
-                return new PendingEmailChange(userId, state.Email, state.ExpiresAtUtc);
+                return new PendingEmailChange(userId, authVersion, state.Email, state.ExpiresAtUtc);
             }
             catch (Exception e)
             {
@@ -722,13 +745,13 @@ namespace backend.main.features.auth.token
 
                 // The index can outlive the state it points at: the state is deleted on redemption
                 // and after too many failed OTP attempts, and both keys expire independently.
-                if (state == null || state.UserId != userId)
+                if (state == null || state.UserId != userId || state.AuthVersion is not int version)
                 {
                     _ = await _cacheService.DeleteKeyAsync(EmailChangeIndexKey(userId));
                     return null;
                 }
 
-                return new PendingEmailChange(userId, state.Email, state.ExpiresAtUtc);
+                return new PendingEmailChange(userId, version, state.Email, state.ExpiresAtUtc);
             }
             catch (Exception e)
             {
@@ -846,6 +869,7 @@ namespace backend.main.features.auth.token
                 // Signup builds an in-memory user that has never been inserted, so its Id is 0.
                 // Only an email change supplies a real account id here.
                 UserId = user.Id > 0 ? user.Id : null,
+                AuthVersion = user.Id > 0 ? user.AuthVersion : null,
                 Password = purpose == VerificationPurpose.SignUp ? user.Password : null,
                 Username = purpose == VerificationPurpose.SignUp ? user.Username : null,
                 Usertype = purpose == VerificationPurpose.SignUp
@@ -971,6 +995,9 @@ namespace backend.main.features.auth.token
         private static string EmailChangeIndexKey(int userId) =>
             $"verify:user-email-change:{userId}";
 
+        private static string EmailChangeLockKey(int userId) =>
+            $"verify:user-email-change-lock:{userId}";
+
         private sealed class RefreshTokenRecord
         {
             public required string SessionId
@@ -1041,6 +1068,10 @@ namespace backend.main.features.auth.token
             {
                 get; set;
             }
+            public int? AuthVersion
+            {
+                get; set;
+            }
             public string? Password
             {
                 get; set;
@@ -1066,6 +1097,10 @@ namespace backend.main.features.auth.token
                 get; set;
             }
             public int? UserId
+            {
+                get; set;
+            }
+            public int? AuthVersion
             {
                 get; set;
             }
