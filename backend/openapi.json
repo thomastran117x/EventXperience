@@ -27747,6 +27747,10 @@
               }
             ]
           },
+          "hasLocalPassword": {
+            "description": "True when the account has its own password. Independent of the provider flags: linking\r\nGoogle or Microsoft to an existing account leaves its password in place.",
+            "$ref": "#/components/schemas/Boolean"
+          },
           "googleLinked": {
             "$ref": "#/components/schemas/Boolean"
           },
