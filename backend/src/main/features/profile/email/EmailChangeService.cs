@@ -136,18 +136,6 @@ namespace backend.main.features.profile.email
             if (user.IsDisabled)
                 throw new ForbiddenException("This account is disabled.");
 
-            // A pending change must not survive a credential rotation. The heads-up sent to the
-            // old address tells its owner to change their password if they did not ask for this,
-            // so that has to actually revoke the proof - otherwise the advice is worthless and a
-            // stolen session's request stays redeemable for the rest of its TTL.
-            if (user.AuthVersion != pending.AuthVersion)
-            {
-                await _tokenService.CancelPendingEmailChangeAsync(pending.UserId);
-                throw new UnauthorizedException(
-                    "This email change is no longer valid because the account's credentials changed."
-                );
-            }
-
             // Re-checked rather than trusted from request time: the address was free 30 minutes
             // ago, which says nothing about now.
             if (await _emailAvailability.IsRegisteredAsync(
@@ -159,9 +147,15 @@ namespace backend.main.features.profile.email
             }
 
             var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
+            // The version the proof was issued against is enforced inside the transaction, while
+            // the row is locked. A pending change must not survive a credential rotation: the
+            // heads-up sent to the old address tells its owner to change their password if they
+            // did not ask for this, and that advice is only worth anything if it actually revokes
+            // the outstanding proof.
             var result = await _userRepository.ChangeEmailAsync(
                 pending.UserId,
                 sanitizedEmail,
+                pending.AuthVersion,
                 utcNow);
 
             switch (result.Status)
@@ -175,6 +169,11 @@ namespace backend.main.features.profile.email
                     return;
                 case EmailChangeStatus.Unavailable:
                     throw new ConflictException("That email is already in use.");
+                case EmailChangeStatus.Stale:
+                    await _tokenService.CancelPendingEmailChangeAsync(pending.UserId);
+                    throw new UnauthorizedException(
+                        "This email change is no longer valid because the account's credentials changed."
+                    );
                 default:
                     throw new InternalServerErrorException();
             }

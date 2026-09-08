@@ -42,6 +42,7 @@ namespace backend.main.features.auth.stepup
         private readonly IDeviceTrustService _deviceTrustService;
         private readonly IAuthUserRepository _userRepository;
         private readonly IAuthSessionService _authSessionService;
+        private readonly ITokenService _tokenService;
         private readonly ClientRequestInfo _requestInfo;
 
         public LoginStepUpChallengeService(
@@ -52,6 +53,7 @@ namespace backend.main.features.auth.stepup
             IDeviceTrustService deviceTrustService,
             IAuthUserRepository userRepository,
             IAuthSessionService authSessionService,
+            ITokenService tokenService,
             ClientRequestInfo requestInfo
         )
         {
@@ -62,6 +64,7 @@ namespace backend.main.features.auth.stepup
             _deviceTrustService = deviceTrustService;
             _userRepository = userRepository;
             _authSessionService = authSessionService;
+            _tokenService = tokenService;
             _requestInfo = requestInfo;
         }
 
@@ -380,6 +383,24 @@ namespace backend.main.features.auth.stepup
                     state.Transport,
                     rememberMe: state.RememberMe
                 );
+
+                // The check above is not enough on its own. A rotation committing between it and
+                // the line above would run its revocation before this session existed, so nothing
+                // would have removed it - and although the access token just minted carries the
+                // stale version and is rejected, the refresh session would still mint valid ones.
+                // Re-read once the session exists and undo it if the account moved on.
+                var current = await _userRepository.GetUserAsync(state.UserId);
+                if (current == null || current.AuthVersion != state.AuthVersion)
+                {
+                    // Revoking the account's sessions rather than just this one: a rotation has
+                    // happened, so everything is meant to be gone, and this is idempotent with the
+                    // revocation the rotation already ran.
+                    await _tokenService.RevokeAllRefreshSessionsAsync(state.UserId);
+                    await DeleteStateAsync(state);
+                    throw new UnauthorizedException(
+                        "This sign-in verification challenge is no longer valid. Please sign in again."
+                    );
+                }
 
                 await DeleteStateAsync(state);
 

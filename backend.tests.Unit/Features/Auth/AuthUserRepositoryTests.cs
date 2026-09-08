@@ -281,7 +281,7 @@ public class AuthUserRepositoryTests
         var userId = await harness.SeedUserAsync(email: "old@example.com");
         var now = new DateTime(2026, 9, 7, 12, 0, 0, DateTimeKind.Utc);
 
-        var result = await harness.Repository.ChangeEmailAsync(userId, "new@example.com", now);
+        var result = await harness.Repository.ChangeEmailAsync(userId, "new@example.com", 1, now);
 
         result.Status.Should().Be(EmailChangeStatus.Changed);
         result.PreviousEmail.Should().Be("old@example.com");
@@ -302,7 +302,7 @@ public class AuthUserRepositoryTests
         await harness.SeedUserAsync(email: "taken@example.com", username: "theirs");
         var now = new DateTime(2026, 9, 7, 12, 0, 0, DateTimeKind.Utc);
 
-        var result = await harness.Repository.ChangeEmailAsync(userId, "taken@example.com", now);
+        var result = await harness.Repository.ChangeEmailAsync(userId, "taken@example.com", 1, now);
 
         result.Status.Should().Be(EmailChangeStatus.Unavailable);
 
@@ -322,7 +322,7 @@ public class AuthUserRepositoryTests
         var userId = await harness.SeedUserAsync(email: "same@example.com");
         var now = new DateTime(2026, 9, 7, 12, 0, 0, DateTimeKind.Utc);
 
-        var result = await harness.Repository.ChangeEmailAsync(userId, "SAME@Example.com", now);
+        var result = await harness.Repository.ChangeEmailAsync(userId, "SAME@Example.com", 1, now);
 
         result.Status.Should().Be(EmailChangeStatus.Unchanged);
 
@@ -337,9 +337,30 @@ public class AuthUserRepositoryTests
         await using var harness = await AuthUserRepositoryHarness.CreateAsync();
         var now = new DateTime(2026, 9, 7, 12, 0, 0, DateTimeKind.Utc);
 
-        var result = await harness.Repository.ChangeEmailAsync(9999, "ghost@example.com", now);
+        var result = await harness.Repository.ChangeEmailAsync(9999, "ghost@example.com", 1, now);
 
         result.Status.Should().Be(EmailChangeStatus.UserNotFound);
+    }
+
+    /// <summary>
+    /// The version is enforced while the row is locked, so a credential rotation that commits
+    /// between the caller's read and this write still stops the change.
+    /// </summary>
+    [Fact]
+    public async Task ChangeEmailAsync_ShouldReportStale_WhenTheAuthVersionMovedOn()
+    {
+        await using var harness = await AuthUserRepositoryHarness.CreateAsync();
+        var userId = await harness.SeedUserAsync(email: "stale@example.com");
+        var now = new DateTime(2026, 9, 7, 12, 0, 0, DateTimeKind.Utc);
+
+        // The account is at version 1; the proof was issued against a version it has left behind.
+        var result = await harness.Repository.ChangeEmailAsync(userId, "new@example.com", 99, now);
+
+        result.Status.Should().Be(EmailChangeStatus.Stale);
+
+        var stored = await harness.Db.Users.SingleAsync(user => user.Id == userId);
+        stored.Email.Should().Be("stale@example.com");
+        stored.AuthVersion.Should().Be(1);
     }
 
     [Fact]

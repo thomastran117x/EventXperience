@@ -625,6 +625,7 @@ namespace backend.main.features.auth
         public async Task<EmailChangeRecord> ChangeEmailAsync(
             int userId,
             string email,
+            int expectedAuthVersion,
             DateTime utcNow)
         {
             var strategy = _context.Database.CreateExecutionStrategy();
@@ -645,6 +646,12 @@ namespace backend.main.features.auth
                         : await _context.Users.FindAsync(userId);
                     if (user == null)
                         return new EmailChangeRecord(EmailChangeStatus.UserNotFound);
+
+                    // Verified here rather than by the caller: the row is locked, so this is the
+                    // only place the version can be compared without a window in which a password
+                    // change could commit between the check and the write.
+                    if (user.AuthVersion != expectedAuthVersion)
+                        return new EmailChangeRecord(EmailChangeStatus.Stale, user);
 
                     var previousEmail = user.Email;
 

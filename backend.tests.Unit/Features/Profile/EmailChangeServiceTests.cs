@@ -47,7 +47,8 @@ public class EmailChangeServiceTests
             Times.Once);
 
         harness.Repository.Verify(
-            r => r.ChangeEmailAsync(It.IsAny<int>(), It.IsAny<string>(), It.IsAny<DateTime>()),
+            r => r.ChangeEmailAsync(
+                It.IsAny<int>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<DateTime>()),
             Times.Never);
 
         // The proof is stamped with the version it was issued against, so a later credential
@@ -180,7 +181,7 @@ public class EmailChangeServiceTests
         await harness.Service.ConfirmAsync(new PendingEmailChange(UserId, AuthVersion, NewEmail, DateTime.UtcNow));
 
         harness.Repository.Verify(
-            r => r.ChangeEmailAsync(UserId, NewEmail, harness.UtcNow),
+            r => r.ChangeEmailAsync(UserId, NewEmail, AuthVersion, harness.UtcNow),
             Times.Once);
 
         // The address is an access token claim, so leaving refresh sessions alive would let a
@@ -233,7 +234,8 @@ public class EmailChangeServiceTests
 
         await act.Should().ThrowAsync<ConflictException>();
         harness.Repository.Verify(
-            r => r.ChangeEmailAsync(It.IsAny<int>(), It.IsAny<string>(), It.IsAny<DateTime>()),
+            r => r.ChangeEmailAsync(
+                It.IsAny<int>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<DateTime>()),
             Times.Never);
     }
 
@@ -243,7 +245,8 @@ public class EmailChangeServiceTests
         var harness = new Harness();
         harness.WithPasswordAccount();
         harness.Repository
-            .Setup(r => r.ChangeEmailAsync(UserId, NewEmail, It.IsAny<DateTime>()))
+            .Setup(r => r.ChangeEmailAsync(
+                    UserId, NewEmail, It.IsAny<int>(), It.IsAny<DateTime>()))
             .ReturnsAsync(new EmailChangeRecord(EmailChangeStatus.Unavailable));
 
         var act = () => harness.Service.ConfirmAsync(
@@ -268,7 +271,13 @@ public class EmailChangeServiceTests
         harness.WithPasswordAccount();
         harness.WithSuccessfulChange();
 
-        // The request was made against the previous auth version.
+        // The proof was issued against an older version, which the repository detects while
+        // holding the row lock — the only place the comparison is not a guess about the past.
+        harness.Repository
+            .Setup(r => r.ChangeEmailAsync(
+                UserId, NewEmail, AuthVersion - 1, It.IsAny<DateTime>()))
+            .ReturnsAsync(new EmailChangeRecord(EmailChangeStatus.Stale));
+
         var stale = new PendingEmailChange(UserId, AuthVersion - 1, NewEmail, DateTime.UtcNow);
 
         var act = () => harness.Service.ConfirmAsync(stale);
@@ -276,10 +285,25 @@ public class EmailChangeServiceTests
         await act.Should().ThrowAsync<UnauthorizedException>()
             .WithMessage("*credentials changed*");
 
-        harness.Repository.Verify(
-            r => r.ChangeEmailAsync(It.IsAny<int>(), It.IsAny<string>(), It.IsAny<DateTime>()),
-            Times.Never);
         harness.Tokens.Verify(t => t.CancelPendingEmailChangeAsync(UserId), Times.Once);
+    }
+
+    /// <summary>
+    /// The expected version travels into the transaction rather than being checked beside it.
+    /// </summary>
+    [Fact]
+    public async Task ConfirmAsync_ShouldEnforceTheVersionInsideTheWrite()
+    {
+        var harness = new Harness();
+        harness.WithPasswordAccount();
+        harness.WithSuccessfulChange();
+
+        await harness.Service.ConfirmAsync(
+            new PendingEmailChange(UserId, AuthVersion, NewEmail, DateTime.UtcNow));
+
+        harness.Repository.Verify(
+            r => r.ChangeEmailAsync(UserId, NewEmail, AuthVersion, harness.UtcNow),
+            Times.Once);
     }
 
     [Fact]
@@ -403,7 +427,8 @@ public class EmailChangeServiceTests
 
         public void WithSuccessfulChange() =>
             Repository
-                .Setup(r => r.ChangeEmailAsync(UserId, NewEmail, It.IsAny<DateTime>()))
+                .Setup(r => r.ChangeEmailAsync(
+                    UserId, NewEmail, It.IsAny<int>(), It.IsAny<DateTime>()))
                 .ReturnsAsync(new EmailChangeRecord(
                     EmailChangeStatus.Changed,
                     new User { Id = UserId, Email = NewEmail, Usertype = "user" },

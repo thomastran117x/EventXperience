@@ -6,6 +6,12 @@ public enum EmailChangeStatus
     UserNotFound,
     Unchanged,
     Unavailable,
+    /// <summary>
+    /// The account's credentials were rotated after the change was requested, so the proof no
+    /// longer authorises anything. Decided while holding the row lock, because a check made
+    /// before the transaction is a guess about the past.
+    /// </summary>
+    Stale,
 }
 
 /// <param name="Status">Outcome of the change attempt.</param>

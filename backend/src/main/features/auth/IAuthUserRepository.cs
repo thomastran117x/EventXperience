@@ -30,6 +30,10 @@ namespace backend.main.features.auth
         /// Swaps the account's address and bumps <c>AuthVersion</c> in one commit, so outstanding
         /// access tokens carrying the old address stop validating the moment the change lands.
         /// </summary>
-        Task<EmailChangeRecord> ChangeEmailAsync(int userId, string email, DateTime utcNow);
+        Task<EmailChangeRecord> ChangeEmailAsync(
+            int userId,
+            string email,
+            int expectedAuthVersion,
+            DateTime utcNow);
     }
 }

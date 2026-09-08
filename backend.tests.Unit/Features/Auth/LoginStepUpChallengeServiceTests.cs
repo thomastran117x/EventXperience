@@ -483,6 +483,7 @@ public class LoginStepUpChallengeServiceTests
             deviceTrustService.Object,
             userRepository.Object,
             authSessionService.Object,
+            new Mock<ITokenService>().Object,
             TestRequestInfoFactory.Browser());
     }
 

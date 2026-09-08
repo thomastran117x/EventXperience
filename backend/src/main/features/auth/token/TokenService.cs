@@ -570,20 +570,15 @@ namespace backend.main.features.auth.token
             string newEmail
         )
         {
-            // Cancel, generate and index have to happen as one unit. Each pending change is stored
-            // under its own target address, so two concurrent requests would otherwise both clear
-            // the same (empty) index, both mint a redeemable token, and leave only the later one
-            // indexed - the earlier proof still live but invisible to a later cancel.
-            var lockValue = Convert.ToBase64String(RandomNumberGenerator.GetBytes(16));
-            var lockKey = EmailChangeLockKey(userId);
-            if (!await _cacheService.AcquireLockAsync(lockKey, lockValue, EmailChangeLockTtl))
-                throw new ConflictException(
-                    "Another email change request is already being processed."
-                );
-
-            try
+            // Cancel, generate and index have to happen as one unit, and consumption has to take
+            // the same lock. Each pending change is stored under its own target address, so
+            // without this two concurrent requests both clear the same (empty) index and both mint
+            // a redeemable token, and a consumption racing a generation deletes the index the
+            // generation just wrote - in both cases leaving a live proof that neither the pending
+            // endpoint nor a later cancel can reach.
+            return await WithEmailChangeLockAsync(userId, async () =>
             {
-                await CancelPendingEmailChangeAsync(userId);
+                await CancelPendingEmailChangeCoreAsync(userId);
 
                 var artifacts = await GenerateVerificationArtifactsAsync(
                     new User
@@ -607,22 +602,42 @@ namespace backend.main.features.auth.token
                     throw new NotAvailableException();
 
                 return artifacts;
+            });
+        }
+
+        public async Task<PendingEmailChange> ConsumeEmailChangeTokenAsync(string token)
+        {
+            try
+            {
+                // Read the payload first, only to learn whose lock to take.
+                string? peek = await _cacheService.GetValueAsync(VerificationTokenKey(token));
+                if (string.IsNullOrEmpty(peek))
+                    throw new UnauthorizedException("Invalid or expired email change link.");
+
+                var peeked = JsonConvert.DeserializeObject<VerificationTokenPayload>(peek)
+                    ?? throw new UnauthorizedException("Invalid verification token payload.");
+
+                // Checked before the account id so a token for another purpose is reported as
+                // such, rather than as one missing a binding it was never meant to carry.
+                if (peeked.Purpose != VerificationPurpose.ChangeEmail)
+                    throw new UnauthorizedException("Verification token purpose mismatch.");
+
+                if (peeked.UserId is not int owner)
+                    throw new UnauthorizedException("Email change token is missing its account.");
+
+                return await WithEmailChangeLockAsync(owner, () => ConsumeTokenCoreAsync(token));
             }
             catch (Exception e)
             {
                 if (e is AppException)
                     throw;
 
-                Logger.Error($"[TokenService] GenerateEmailChangeArtifactsAsync failed: {e}");
+                Logger.Error($"[TokenService] ConsumeEmailChangeTokenAsync failed: {e}");
                 throw new InternalServerErrorException();
-            }
-            finally
-            {
-                await _cacheService.ReleaseLockAsync(lockKey, lockValue);
             }
         }
 
-        public async Task<PendingEmailChange> ConsumeEmailChangeTokenAsync(string token)
+        private async Task<PendingEmailChange> ConsumeTokenCoreAsync(string token)
         {
             try
             {
@@ -663,7 +678,7 @@ namespace backend.main.features.auth.token
                 if (e is AppException)
                     throw;
 
-                Logger.Error($"[TokenService] ConsumeEmailChangeTokenAsync failed: {e}");
+                Logger.Error($"[TokenService] ConsumeTokenCoreAsync failed: {e}");
                 throw new InternalServerErrorException();
             }
         }
@@ -672,6 +687,33 @@ namespace backend.main.features.auth.token
             string code,
             string challenge
         )
+        {
+            try
+            {
+                var peek = await GetVerificationStateByChallengeAsync(challenge)
+                    ?? throw new UnauthorizedException("Invalid or expired verification challenge.");
+
+                if (peek.Purpose != VerificationPurpose.ChangeEmail)
+                    throw new UnauthorizedException("Verification challenge purpose mismatch.");
+
+                if (peek.UserId is not int owner)
+                    throw new UnauthorizedException("Email change challenge is missing its account.");
+
+                return await WithEmailChangeLockAsync(
+                    owner,
+                    () => ConsumeOtpCoreAsync(code, challenge));
+            }
+            catch (Exception e)
+            {
+                if (e is AppException)
+                    throw;
+
+                Logger.Error($"[TokenService] ConsumeEmailChangeOtpAsync failed: {e}");
+                throw new InternalServerErrorException();
+            }
+        }
+
+        private async Task<PendingEmailChange> ConsumeOtpCoreAsync(string code, string challenge)
         {
             try
             {
@@ -728,7 +770,7 @@ namespace backend.main.features.auth.token
                 if (e is AppException)
                     throw;
 
-                Logger.Error($"[TokenService] ConsumeEmailChangeOtpAsync failed: {e}");
+                Logger.Error($"[TokenService] ConsumeOtpCoreAsync failed: {e}");
                 throw new InternalServerErrorException();
             }
         }
@@ -763,7 +805,14 @@ namespace backend.main.features.auth.token
             }
         }
 
-        public async Task CancelPendingEmailChangeAsync(int userId)
+        public Task CancelPendingEmailChangeAsync(int userId) =>
+            WithEmailChangeLockAsync<object?>(userId, async () =>
+            {
+                await CancelPendingEmailChangeCoreAsync(userId);
+                return null;
+            });
+
+        private async Task CancelPendingEmailChangeCoreAsync(int userId)
         {
             try
             {
@@ -792,7 +841,7 @@ namespace backend.main.features.auth.token
                 if (e is AppException)
                     throw;
 
-                Logger.Error($"[TokenService] CancelPendingEmailChangeAsync failed: {e}");
+                Logger.Error($"[TokenService] CancelPendingEmailChangeCoreAsync failed: {e}");
                 throw new InternalServerErrorException();
             }
         }
@@ -994,6 +1043,25 @@ namespace backend.main.features.auth.token
         // request to a different address would strand the first one until its TTL ran out.
         private static string EmailChangeIndexKey(int userId) =>
             $"verify:user-email-change:{userId}";
+
+        private async Task<T> WithEmailChangeLockAsync<T>(int userId, Func<Task<T>> action)
+        {
+            var lockValue = Convert.ToBase64String(RandomNumberGenerator.GetBytes(16));
+            var lockKey = EmailChangeLockKey(userId);
+            if (!await _cacheService.AcquireLockAsync(lockKey, lockValue, EmailChangeLockTtl))
+                throw new ConflictException(
+                    "Another email change request is already being processed."
+                );
+
+            try
+            {
+                return await action();
+            }
+            finally
+            {
+                await _cacheService.ReleaseLockAsync(lockKey, lockValue);
+            }
+        }
 
         private static string EmailChangeLockKey(int userId) =>
             $"verify:user-email-change-lock:{userId}";
