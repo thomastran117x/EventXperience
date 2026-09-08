@@ -14573,6 +14573,11 @@ components:
           $ref: '#/components/schemas/String'
         usertype:
           $ref: '#/components/schemas/String'
+        username:
+          oneOf:
+            - type: 'null'
+            - description: "Required when the provider account is new, ignored when it resolves to an account that\r\nalready exists. Not `[Required]` for that reason: the caller cannot know in advance\r\nwhich of the two it will be, and the service enforces it on the branch that creates."
+              $ref: '#/components/schemas/String'
         transport:
           oneOf:
             - type: 'null'

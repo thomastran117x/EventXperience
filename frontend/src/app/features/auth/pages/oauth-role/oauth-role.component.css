@@ -59,6 +59,44 @@
   gap: 0.9rem;
 }
 
+.oauth-role-field {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.oauth-role-field-label {
+  font-weight: 700;
+}
+
+.oauth-role-input {
+  width: 100%;
+  padding: 0.85rem 1rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  color: inherit;
+  font: inherit;
+  outline: none;
+}
+
+.oauth-role-input:focus {
+  border-color: rgba(123, 182, 255, 0.9);
+}
+
+.oauth-role-hint {
+  margin: 0;
+  font-size: 0.85rem;
+  color: rgba(243, 247, 251, 0.72);
+}
+
+.oauth-role-hint-error {
+  color: rgb(255, 145, 145);
+}
+
+.oauth-role-hint-ok {
+  color: rgb(126, 226, 168);
+}
+
 .oauth-role-option {
   display: flex;
   gap: 0.9rem;

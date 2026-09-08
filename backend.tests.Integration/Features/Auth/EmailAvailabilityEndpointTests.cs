@@ -175,8 +175,11 @@ public class EmailAvailabilityEndpointTests
         (await app.ReadApiResponseAsync<EmailAvailabilityResponse>(email)).Data!.Available
             .Should().BeTrue();
 
+        // The mirror image cannot be probed directly any more: an address is never a legal
+        // username, so the endpoint answers 400 rather than consulting either filter. Probe the
+        // local part instead - it is registered as an email, and must still read as a free username.
         var username = await app.Client.GetAsync(
-            "/api/auth/username/availability?username=separation@example.com");
+            "/api/auth/username/availability?username=separation");
         (await app.ReadApiResponseAsync<UsernameAvailabilityResponse>(username)).Data!.Available
             .Should().BeTrue();
     }

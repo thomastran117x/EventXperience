@@ -79,6 +79,12 @@ public class UsernameAvailabilityEndpointTests
     [Theory]
     [InlineData("")]
     [InlineData("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")]
+    [InlineData("ab")]
+    [InlineData("a..b")]
+    [InlineData(".ab")]
+    [InlineData("ab-")]
+    [InlineData("a%20b")]
+    [InlineData("admin")]
     public async Task CheckAvailability_ShouldRejectNamesThePolicyDisallows(string username)
     {
         await using var app = await AuthApiTestApp.CreateAsync();

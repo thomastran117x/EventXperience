@@ -120,3 +120,84 @@ describe('SignupComponent email availability', () => {
     expect(component.emailAvailable()).toBeFalse();
   }));
 });
+
+describe('SignupComponent username format', () => {
+  let fixture: ComponentFixture<SignupComponent>;
+  let component: SignupComponent;
+  let auth: jasmine.SpyObj<AuthService>;
+
+  beforeEach(async () => {
+    auth = jasmine.createSpyObj<AuthService>('AuthService', [
+      'signup',
+      'checkUsernameAvailability',
+      'checkEmailAvailability',
+    ]);
+    auth.checkUsernameAvailability.and.returnValue(
+      of({ username: 'ada', available: true } as UsernameAvailabilityResponse),
+    );
+    auth.checkEmailAvailability.and.returnValue(
+      of({ email: 'ada@example.com', available: true } as EmailAvailabilityResponse),
+    );
+
+    await TestBed.configureTestingModule({
+      imports: [SignupComponent],
+      providers: [
+        provideRouter([]),
+        { provide: AuthService, useValue: auth },
+        {
+          provide: RecaptchaV3Service,
+          useValue: jasmine.createSpyObj<RecaptchaV3Service>('RecaptchaV3Service', ['execute']),
+        },
+        {
+          provide: AuthReturnUrlService,
+          useValue: jasmine.createSpyObj<AuthReturnUrlService>('AuthReturnUrlService', [
+            'captureFromRoute',
+            'peek',
+            'consume',
+          ]),
+        },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(SignupComponent);
+    component = fixture.componentInstance;
+    fixture.detectChanges();
+  });
+
+  function enterUsername(value: string): void {
+    component.form.controls.username.setValue(value);
+    component.form.controls.username.markAsTouched();
+    tick(400);
+    fixture.detectChanges();
+  }
+
+  it('shows the server wording for a malformed username', fakeAsync(() => {
+    enterUsername('a..b');
+
+    expect(component.usernameFormatMessage()).toContain('must start and end with');
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain('must start and end with');
+  }));
+
+  // The endpoint answers 400 for these and is rate limited at 30/min/IP, so the form must not
+  // spend a request to learn what the synchronous validator already knows.
+  it('never probes a username the endpoint would reject', fakeAsync(() => {
+    enterUsername('ab');
+    expect(auth.checkUsernameAvailability).not.toHaveBeenCalled();
+
+    enterUsername('admin');
+    expect(auth.checkUsernameAvailability).not.toHaveBeenCalled();
+
+    expect(component.usernameAvailable()).toBeFalse();
+  }));
+
+  it('does not submit while the username is malformed', fakeAsync(() => {
+    component.form.controls.email.setValue('ada@example.com');
+    component.form.controls.password.setValue('Password123!');
+    enterUsername('.ada');
+
+    void component.submit();
+    tick();
+
+    expect(auth.signup).not.toHaveBeenCalled();
+  }));
+});

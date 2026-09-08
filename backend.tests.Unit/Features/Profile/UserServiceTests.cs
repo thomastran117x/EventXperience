@@ -158,6 +158,36 @@ public class UserServiceTests
         refreshCache.Verify(cache => cache.RemoveAsync("user:3"), Times.Once);
     }
 
+    /// <summary>
+    /// Public profile lookups normalise but do not validate, so accounts whose usernames predate
+    /// the format rules - everything the backfill migration derived from an email local part -
+    /// still resolve instead of 400ing.
+    /// </summary>
+    [Fact]
+    public async Task GetPublicProfileByUsernameAsync_ShouldNotApplyFormatRulesToLegacyNames()
+    {
+        var now = new DateTimeOffset(2026, 8, 15, 12, 0, 0, TimeSpan.Zero);
+        var repository = new Mock<IUserRepository>();
+        repository.Setup(repo => repo.GetPublicProfileByUsernameOrReservationAsync(
+                "legacy..name",
+                now.UtcDateTime))
+            .ReturnsAsync(new UserProfileRecord
+            {
+                Id = 9,
+                Email = "legacy@example.com",
+                Username = "legacy..name",
+                Usertype = "Participant",
+            });
+        var service = CreateService(
+            userRepository: repository,
+            timeProvider: new FixedTimeProvider(now));
+
+        var profile = await service.GetPublicProfileByUsernameAsync("Legacy..Name");
+
+        profile.Username.Should().Be("legacy..name");
+        repository.VerifyAll();
+    }
+
     [Fact]
     public async Task ChangeUsernameAsync_ShouldReturnStructuredCooldownError()
     {

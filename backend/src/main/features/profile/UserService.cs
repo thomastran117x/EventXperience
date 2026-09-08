@@ -77,7 +77,10 @@ namespace backend.main.features.profile
 
         public async Task<UserProfileRecord> GetPublicProfileByUsernameAsync(string username)
         {
-            var normalizedUsername = UsernamePolicy.NormalizeAndValidate(username);
+            // Lookup, so Normalize rather than NormalizeAndValidate: usernames created before the
+            // format rules existed still have to resolve their public profile. A value that no
+            // longer satisfies the rules simply misses and becomes a 404 below.
+            var normalizedUsername = UsernamePolicy.Normalize(username);
             var profile = await _userRepository.GetPublicProfileByUsernameOrReservationAsync(
                 normalizedUsername,
                 _timeProvider.GetUtcNow().UtcDateTime);

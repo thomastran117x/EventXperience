@@ -541,6 +541,9 @@ namespace backend.main.features.auth
                     if (user == null)
                         return new UsernameChangeRecord(UsernameChangeStatus.UserNotFound);
 
+                    // The name being replaced, so Normalize rather than NormalizeAndValidate: it
+                    // may predate the format rules, and validating it here would leave the owner
+                    // permanently unable to rename away from it.
                     var currentUsername = string.IsNullOrWhiteSpace(user.Username)
                         ? null
                         : UsernamePolicy.Normalize(user.Username);

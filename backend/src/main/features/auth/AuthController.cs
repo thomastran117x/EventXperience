@@ -593,6 +593,7 @@ namespace backend.main.features.auth
                 var userToken = await _authService.CompleteOAuthSignupAsync(
                     request.SignupToken,
                     request.Usertype,
+                    request.Username,
                     SessionTransportResolver.ResolveOrDefault(request.Transport)
                 );
 

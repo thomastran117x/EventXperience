@@ -104,6 +104,24 @@ public class AuthRequestValidationTests
         );
     }
 
+    /// <summary>
+    /// Username is enforced in the service, on the branch that creates an account, not by the
+    /// annotations: the caller cannot know whether the provider account is new, and the link
+    /// branch legitimately sends none.
+    /// </summary>
+    [Fact]
+    public void CompleteOAuthSignupRequest_ShouldNotRequireAUsername()
+    {
+        var request = new CompleteOAuthSignupRequest
+        {
+            SignupToken = "signup-token",
+            Usertype = "organizer",
+            Username = null
+        };
+
+        Validate(request).Should().BeEmpty();
+    }
+
     private static List<ValidationResult> Validate(object instance)
     {
         var results = new List<ValidationResult>();

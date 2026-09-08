@@ -16,6 +16,11 @@ import { User } from '../../../../../../core/stores/user.model';
 import { AuthService } from '../../../../../auth/services/auth.service';
 import { emailAvailabilityValidator } from '../../../../../auth/validators/email-availability.validator';
 import {
+  normalizeUsername,
+  usernameAvailabilityValidator,
+} from '../../../../../auth/validators/username-availability.validator';
+import { usernameFormatValidator } from '../../../../../auth/validators/username-format.validator';
+import {
   MyProfile,
   PendingEmailChange,
   ProfileService,
@@ -45,7 +50,19 @@ export class ProfileTabComponent implements OnInit {
   });
 
   readonly usernameForm = this.fb.nonNullable.group({
-    username: this.fb.nonNullable.control('', [Validators.required, Validators.maxLength(50)]),
+    username: this.fb.nonNullable.control(
+      '',
+      [Validators.required, usernameFormatValidator],
+      // The same debounced probe the signup form uses, exempting the name the account already
+      // holds: the API would report that one taken, and resetForm() prefills it on every load.
+      [
+        usernameAvailabilityValidator(
+          this.auth,
+          (username) => (this.confirmedUsernameAvailable = username),
+          { exempt: () => this.profile?.Username ?? null },
+        ),
+      ],
+    ),
   });
 
   readonly emailForm = this.fb.nonNullable.group({
@@ -62,6 +79,9 @@ export class ProfileTabComponent implements OnInit {
   readonly emailCodeForm = this.fb.nonNullable.group({
     code: this.fb.nonNullable.control('', [Validators.required, Validators.pattern(/^\d{6}$/)]),
   });
+
+  /** The last username the API actually confirmed as free; null whenever we did not get an answer. */
+  private confirmedUsernameAvailable: string | null = null;
 
   profile: MyProfile | null = null;
   loading = true;
@@ -103,6 +123,29 @@ export class ProfileTabComponent implements OnInit {
     // Driven by whether a password exists, not by whether a provider is linked: an account can
     // have both, and the API asks for the password whenever it has one to check.
     return !!this.profile && this.profile.HasLocalPassword;
+  }
+
+  get usernameChecking(): boolean {
+    return this.usernameForm.controls.username.pending;
+  }
+
+  /**
+   * Only claim availability for a name the API actually confirmed. The validator fails open, so a
+   * failed or rate-limited probe also leaves the control VALID - reading validity alone would
+   * announce "available" when nothing was ever checked.
+   */
+  get usernameAvailable(): boolean {
+    const control = this.usernameForm.controls.username;
+    return (
+      control.valid &&
+      this.confirmedUsernameAvailable !== null &&
+      this.confirmedUsernameAvailable === normalizeUsername(control.value)
+    );
+  }
+
+  /** The server's own wording for why this value would be rejected, or null when it is fine. */
+  get usernameFormatMessage(): string | null {
+    return this.usernameForm.controls.username.errors?.['usernameFormat']?.message ?? null;
   }
 
   get usertypeLabel(): string {
@@ -208,8 +251,10 @@ export class ProfileTabComponent implements OnInit {
       return;
     }
 
-    const username = this.usernameForm.getRawValue().username.trim().toLowerCase();
-    this.usernameForm.controls.username.setValue(username);
+    // Deliberately not written back into the control: setValue re-runs the async validator and
+    // spends a probe from the rate-limit budget on every submit. The format validator normalises
+    // internally, so a whitespace-only value is still caught without the write-back.
+    const username = normalizeUsername(this.usernameForm.getRawValue().username);
     if (this.usernameForm.invalid) {
       this.usernameForm.markAllAsTouched();
       return;

@@ -4,6 +4,7 @@ import { Observable, of, throwError } from 'rxjs';
 
 import { AuthService, UsernameAvailabilityResponse } from '../services/auth.service';
 import {
+  UsernameAvailabilityOptions,
   normalizeUsername,
   usernameAvailabilityValidator,
 } from './username-availability.validator';
@@ -20,6 +21,7 @@ describe('usernameAvailabilityValidator', () => {
   function runValidator(
     auth: jasmine.SpyObj<AuthService>,
     value: string,
+    options: UsernameAvailabilityOptions = {},
   ): { errors: unknown; confirmed: string | null | undefined } {
     const control = new FormControl(value);
     const captured: { errors: unknown; confirmed: string | null | undefined } = {
@@ -27,9 +29,13 @@ describe('usernameAvailabilityValidator', () => {
       confirmed: undefined,
     };
 
-    const validator = usernameAvailabilityValidator(auth, (username) => {
-      captured.confirmed = username;
-    });
+    const validator = usernameAvailabilityValidator(
+      auth,
+      (username) => {
+        captured.confirmed = username;
+      },
+      options,
+    );
 
     (validator(control) as Observable<unknown>).subscribe((errors) => {
       captured.errors = errors;
@@ -37,6 +43,18 @@ describe('usernameAvailabilityValidator', () => {
 
     return captured;
   }
+
+  it('works without a confirmation callback', fakeAsync(() => {
+    const auth = createAuth(of({ username: 'ada', available: false }));
+    let errors: unknown;
+
+    (usernameAvailabilityValidator(auth)(new FormControl('ada')) as Observable<unknown>).subscribe(
+      (result) => (errors = result),
+    );
+    tick(400);
+
+    expect(errors).toEqual({ usernameTaken: true });
+  }));
 
   it('reports no error when the username is available', fakeAsync(() => {
     const auth = createAuth(of({ username: 'ada', available: true }));
@@ -87,6 +105,41 @@ describe('usernameAvailabilityValidator', () => {
     expect(empty.errors).toBeNull();
     expect(tooLong.errors).toBeNull();
     expect(auth.checkUsernameAvailability).not.toHaveBeenCalled();
+  }));
+
+  // The endpoint answers 400 for these, and its rate limit is 30/min/IP, so a probe would spend
+  // budget to learn nothing the format validator did not already know.
+  it('skips the API for values the endpoint would reject', fakeAsync(() => {
+    const auth = createAuth(of({ username: 'ada', available: true }));
+
+    for (const value of ['ab', 'a..b', '.ab', 'ab-', 'a b', 'admin']) {
+      expect(runValidator(auth, value).errors).toBeNull();
+    }
+    tick(400);
+
+    expect(auth.checkUsernameAvailability).not.toHaveBeenCalled();
+  }));
+
+  // On a rename form the field is prefilled with the account's current name, which the API would
+  // report as taken. Probing it would also spend a request on every profile load.
+  it('skips the API for an exempt username', fakeAsync(() => {
+    const auth = createAuth(of({ username: 'member', available: false }));
+
+    const result = runValidator(auth, '  Member  ', { exempt: () => 'member' });
+    tick(400);
+
+    expect(result.errors).toBeNull();
+    expect(result.confirmed).toBeNull();
+    expect(auth.checkUsernameAvailability).not.toHaveBeenCalled();
+  }));
+
+  it('still probes a value that differs from the exempt username', fakeAsync(() => {
+    const auth = createAuth(of({ username: 'other', available: true }));
+
+    runValidator(auth, 'other', { exempt: () => 'member' });
+    tick(400);
+
+    expect(auth.checkUsernameAvailability).toHaveBeenCalledWith('other');
   }));
 
   // The server rejects duplicates regardless, so failing open costs a late error message rather

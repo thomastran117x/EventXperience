@@ -1,4 +1,4 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { of, throwError } from 'rxjs';
 
@@ -10,7 +10,10 @@ import { AuthService } from '../../../../../auth/services/auth.service';
 import { MyProfile, ProfileService } from '../../../../services/profile.service';
 import { ProfileTabComponent } from './profile-tab.component';
 
-type AuthStub = Pick<AuthService, 'confirmEmailChange' | 'checkEmailAvailability'>;
+type AuthStub = Pick<
+  AuthService,
+  'confirmEmailChange' | 'checkEmailAvailability' | 'checkUsernameAvailability'
+>;
 type AuthTokenStub = Pick<AuthTokenService, 'logoutLocal'>;
 
 function makeProfile(overrides: Partial<MyProfile> = {}): MyProfile {
@@ -58,8 +61,10 @@ describe('ProfileTabComponent', () => {
     auth = jasmine.createSpyObj<AuthStub>('AuthService', [
       'confirmEmailChange',
       'checkEmailAvailability',
+      'checkUsernameAvailability',
     ]);
     auth.checkEmailAvailability.and.returnValue(of({ email: '', available: true }));
+    auth.checkUsernameAvailability.and.returnValue(of({ username: '', available: true }));
 
     authToken = jasmine.createSpyObj<AuthTokenStub>('AuthTokenService', ['logoutLocal']);
 
@@ -155,17 +160,65 @@ describe('ProfileTabComponent', () => {
     expect(profileService.changeUsername).not.toHaveBeenCalled();
   });
 
-  it('normalizes before rejecting an empty username', () => {
+  it('reports no format message while the username is acceptable', () => {
+    component.startUsernameChange();
+    component.usernameForm.setValue({ username: 'valid-name' });
+
+    expect(component.usernameFormatMessage).toBeNull();
+  });
+
+  it('rejects a whitespace-only username without writing it back into the control', () => {
     component.startUsernameChange();
     component.usernameMfaVerified = true;
     component.usernameForm.setValue({ username: '   ' });
 
     component.changeUsername();
 
-    expect(component.usernameForm.controls.username.value).toBe('');
-    expect(component.usernameForm.controls.username.hasError('required')).toBeTrue();
+    // Validators.required accepts '   ', so the format validator is what catches it.
+    expect(component.usernameFormatMessage).toBe('Username is required.');
     expect(profileService.changeUsername).not.toHaveBeenCalled();
   });
+
+  it('does not submit a username the API would reject on format', () => {
+    component.startUsernameChange();
+    component.usernameMfaVerified = true;
+    component.usernameForm.setValue({ username: 'a..b' });
+
+    component.changeUsername();
+
+    expect(component.usernameFormatMessage).toContain('must start and end with');
+    expect(profileService.changeUsername).not.toHaveBeenCalled();
+  });
+
+  it('never probes availability for the username the account already holds', fakeAsync(() => {
+    // resetForm() prefills the current name on every profile load; probing it would spend a
+    // request from the rate-limit budget and come back "taken" for the owner's own handle.
+    component.startUsernameChange();
+    tick(500);
+
+    expect(auth.checkUsernameAvailability).not.toHaveBeenCalled();
+    expect(component.usernameAvailable).toBeFalse();
+  }));
+
+  it('reports a different username the API says is taken', fakeAsync(() => {
+    auth.checkUsernameAvailability.and.returnValue(of({ username: 'next-name', available: false }));
+    component.startUsernameChange();
+    component.usernameForm.setValue({ username: 'next-name' });
+    tick(500);
+
+    expect(auth.checkUsernameAvailability).toHaveBeenCalledWith('next-name');
+    expect(component.usernameForm.controls.username.hasError('usernameTaken')).toBeTrue();
+    expect(component.usernameAvailable).toBeFalse();
+  }));
+
+  it('confirms a different username the API says is free', fakeAsync(() => {
+    auth.checkUsernameAvailability.and.returnValue(of({ username: 'next-name', available: true }));
+    component.startUsernameChange();
+    component.usernameForm.setValue({ username: 'next-name' });
+    tick(500);
+
+    expect(component.usernameAvailable).toBeTrue();
+  }));
 
   it('restores the current username when the rename flow is cancelled', () => {
     component.startUsernameChange();
