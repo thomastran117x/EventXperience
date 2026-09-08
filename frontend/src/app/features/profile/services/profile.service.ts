@@ -133,6 +133,40 @@ function normalizePublicProfile(value: unknown): PublicProfile | null {
   };
 }
 
+function normalizeEmailChangeChallenge(value: unknown): EmailChangeChallenge | null {
+  const source = asRecord(value);
+  if (!source) {
+    return null;
+  }
+
+  const challenge = readString(source, 'Challenge', 'challenge');
+  if (challenge === undefined) {
+    return null;
+  }
+
+  return {
+    Challenge: challenge,
+    ExpiresAtUtc: readString(source, 'ExpiresAtUtc', 'expiresAtUtc') ?? '',
+  };
+}
+
+function normalizePendingEmailChange(value: unknown): PendingEmailChange | null {
+  const source = asRecord(value);
+  if (!source) {
+    return null;
+  }
+
+  const newEmail = readString(source, 'NewEmail', 'newEmail');
+  if (newEmail === undefined) {
+    return null;
+  }
+
+  return {
+    NewEmail: newEmail,
+    ExpiresAtUtc: readString(source, 'ExpiresAtUtc', 'expiresAtUtc') ?? '',
+  };
+}
+
 function requireProfile<T>(value: T | null, message: string): T {
   if (value === null) {
     throw new Error(message);
@@ -222,13 +256,24 @@ export class ProfileService {
     return this.postWithCsrf<ApiEnvelope<EmailChangeChallenge>>(`${this.baseUrl}/email`, {
       newEmail,
       currentPassword,
-    }).pipe(map((res) => requireEnvelopeData(res, 'Email change response was incomplete.')));
+    }).pipe(
+      map((res) =>
+        requireProfile(
+          normalizeEmailChangeChallenge(
+            requireEnvelopeData(res, 'Email change response was incomplete.'),
+          ),
+          'Email change response was incomplete.',
+        ),
+      ),
+    );
   }
 
   /** Resolves to null when nothing is awaiting confirmation. */
   getPendingEmailChange(): Observable<PendingEmailChange | null> {
     return this.getWithCsrf<ApiEnvelope<PendingEmailChange>>(`${this.baseUrl}/email/pending`).pipe(
-      map((res) => extractEnvelopeData(res) ?? null),
+      // Null is a normal answer here — nothing is awaiting confirmation — so a payload that does
+      // not normalise reads the same way rather than throwing.
+      map((res) => normalizePendingEmailChange(extractEnvelopeData(res))),
     );
   }
 

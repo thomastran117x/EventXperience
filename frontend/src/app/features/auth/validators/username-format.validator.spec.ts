@@ -6,6 +6,7 @@ import {
   describeUsernameProblem,
   isValidUsernameFormat,
   isWellFormedUsername,
+  isDisplayCharset,
   normalizeUsername,
   toUsernameDisplay,
   usernameFormatValidator,
@@ -146,5 +147,31 @@ describe('mixed case', () => {
 
   it('no longer tells the user their username must be lowercase', () => {
     expect(USERNAME_FORMAT_HINT).not.toContain('lowercase');
+  });
+});
+
+describe('homoglyph display characters', () => {
+  // U+212A KELVIN SIGN lowercases to an ASCII 'k', so the normalised form is a clean 'kelvin' and
+  // every rule that inspects it passes — while the value the server would store is not ASCII.
+  const kelvin = 'Kelvin';
+
+  it('normalises to something that looks entirely valid', () => {
+    expect(normalizeUsername(kelvin)).toBe('kelvin');
+    expect(describeUsernameProblem(normalizeUsername(kelvin))).toBeNull();
+  });
+
+  it('is rejected anyway, because the stored form is checked too', () => {
+    const control = new FormControl(kelvin);
+
+    expect(isDisplayCharset(kelvin)).toBeFalse();
+    expect(usernameFormatValidator(control)).toEqual({
+      usernameFormat: { message: USERNAME_FORMAT_HINT },
+    });
+  });
+
+  it('still accepts ordinary mixed case and separators', () => {
+    expect(isDisplayCharset('SmartCat23')).toBeTrue();
+    expect(isDisplayCharset('a.b_c-d')).toBeTrue();
+    expect(usernameFormatValidator(new FormControl('SmartCat23'))).toBeNull();
   });
 });

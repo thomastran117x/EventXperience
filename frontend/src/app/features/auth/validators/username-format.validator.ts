@@ -62,6 +62,30 @@ function isSeparator(character: string): boolean {
   return character === '.' || character === '_' || character === '-';
 }
 
+/**
+ * Whether the value as typed is drawn only from the characters a username may contain, uppercase
+ * letters included. Mirrors `UsernamePolicy.IsDisplayCharset`.
+ *
+ * Checking the raw value matters because lowercasing is lossy: U+212A KELVIN SIGN lowercases to an
+ * ASCII 'k', so `Kelvin` normalises to a clean `kelvin` and passes every other rule here while the
+ * string the server would store is a non-ASCII homoglyph.
+ */
+export function isDisplayCharset(value: string): boolean {
+  for (const character of value ?? '') {
+    const allowed =
+      (character >= 'a' && character <= 'z') ||
+      (character >= 'A' && character <= 'Z') ||
+      (character >= '0' && character <= '9') ||
+      isSeparator(character);
+
+    if (!allowed) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 /** Whether an already-normalised value satisfies the charset and placement rules. */
 export function isWellFormedUsername(normalized: string): boolean {
   if (normalized.length < USERNAME_MIN_LENGTH || normalized.length > USERNAME_MAX_LENGTH) {
@@ -139,6 +163,12 @@ export const usernameFormatValidator: ValidatorFn = (
   const normalized = normalizeUsername(raw);
   if (normalized.length === 0) {
     return { usernameFormat: { message: 'Username is required.' } };
+  }
+
+  // Checked against the trimmed raw value rather than the normalised one, since normalising is
+  // exactly what hides a homoglyph.
+  if (!isDisplayCharset(toUsernameDisplay(raw))) {
+    return { usernameFormat: { message: USERNAME_FORMAT_HINT } };
   }
 
   const message = describeUsernameProblem(normalized);

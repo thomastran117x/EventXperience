@@ -185,4 +185,47 @@ public class UsernamePolicyTests
     {
         UsernamePolicy.FormatMessage.Should().NotContain("lowercase");
     }
+
+    /// <summary>
+    /// The hole a normalised-only check leaves open. U+212A KELVIN SIGN lowercases to an ASCII 'k',
+    /// so this value normalises to a perfectly clean "kelvin" and satisfies every rule that looks
+    /// at the normalised form — while the string that would be stored and rendered is a non-ASCII
+    /// homoglyph. Worse than cosmetic: CK_Users_UsernameDisplay_Normalizes compares PostgreSQL's
+    /// collation-dependent lower() against the key, so where it does not agree with
+    /// ToLowerInvariant the row fails the constraint and a signup becomes a 500 rather than a 400.
+    /// </summary>
+    [Theory]
+    [InlineData("Kelvin")]       // KELVIN SIGN + elvin -> "kelvin"
+    [InlineData("İstanbul")]     // LATIN CAPITAL I WITH DOT ABOVE
+    [InlineData("Admın")]        // DOTLESS I
+    [InlineData("café")]         // plainly non-ASCII
+    public void NormalizeAndValidateWithDisplay_ShouldRejectANonAsciiDisplay(string username)
+    {
+        var act = () => UsernamePolicy.NormalizeAndValidateWithDisplay(username);
+
+        act.Should().Throw<BadRequestException>().WithMessage(UsernamePolicy.FormatMessage);
+    }
+
+    [Fact]
+    public void NormalizeAndValidateWithDisplay_ShouldStillAcceptOrdinaryMixedCase()
+    {
+        var forms = UsernamePolicy.NormalizeAndValidateWithDisplay("SmartCat23");
+
+        forms.Username.Should().Be("smartcat23");
+        forms.Display.Should().Be("SmartCat23");
+    }
+
+    /// <summary>
+    /// The re-validation hook untrusted write paths depend on has to close the same hole, or a
+    /// display arriving from a cached payload or a seeder could still land a homoglyph.
+    /// </summary>
+    [Fact]
+    public void IsValidDisplayFor_ShouldRejectAHomoglyphThatNormalizesCorrectly()
+    {
+        const string homoglyph = "Kelvin";
+
+        UsernamePolicy.Normalize(homoglyph).Should().Be("kelvin");
+        UsernamePolicy.IsValidDisplayFor("kelvin", homoglyph).Should().BeFalse();
+        UsernamePolicy.IsValidDisplayFor("kelvin", "Kelvin").Should().BeTrue();
+    }
 }

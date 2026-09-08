@@ -131,9 +131,15 @@ public static class UsernamePolicy
     /// A write path that takes a display form from anywhere other than
     /// <see cref="NormalizeAndValidateWithDisplay"/> — a cached signup payload, a seeder, a caller
     /// that set the property by hand — must re-check it here rather than trust it.
+    ///
+    /// Checking the charset as well as the normalised form is load-bearing, not belt-and-braces:
+    /// lowercasing is lossy across scripts, so a value can normalise to clean ASCII while the
+    /// display itself is not. See <see cref="IsDisplayCharset"/>.
     /// </remarks>
     public static bool IsValidDisplayFor(string normalizedUsername, string? display) =>
-        display is not null && Normalize(display) == normalizedUsername;
+        display is not null
+        && IsDisplayCharset(display)
+        && Normalize(display) == normalizedUsername;
 
     /// <summary>
     /// Normalises and enforces the format rules, returning both the lookup key and the display
@@ -158,6 +164,19 @@ public static class UsernamePolicy
         if (!IsWellFormed(normalized))
             throw new BadRequestException(FormatMessage);
 
+        // IsWellFormed sees only the lowercased value, and lowercasing is lossy across scripts, so
+        // it is not sufficient on its own: U+212A KELVIN SIGN lowercases to an ASCII 'k', which
+        // means "Kelvin" normalises to a perfectly clean "kelvin" and passes every check
+        // above — while the string actually stored and rendered is a non-ASCII homoglyph.
+        //
+        // That breaks the "differ by letter case alone" invariant, and it is worse than cosmetic:
+        // the CK_Users_UsernameDisplay_Normalizes constraint compares PostgreSQL's lower() against
+        // the stored key, and PostgreSQL's lower() is collation-dependent. Where it declines to map
+        // U+212A the way ToLowerInvariant does, the row fails the constraint and an ordinary signup
+        // becomes a 500 instead of a 400.
+        if (!IsDisplayCharset(display))
+            throw new BadRequestException(FormatMessage);
+
         // Deliberately vague: naming the list would tell a caller which handles to go looking for.
         if (ReservedNames.Contains(normalized))
             throw new BadRequestException("That username is not available.");
@@ -174,6 +193,30 @@ public static class UsernamePolicy
     /// </remarks>
     public static string NormalizeAndValidate(string? username) =>
         NormalizeAndValidateWithDisplay(username).Username;
+
+    /// <summary>
+    /// Whether a display form is drawn only from the characters a username may contain, allowing
+    /// uppercase letters as the one difference from the normalised key.
+    /// </summary>
+    /// <remarks>
+    /// Placement, length and the reserved list are all decided on the normalised value; this asks
+    /// the one question lowercasing can hide, which is whether the display is ASCII at all.
+    /// </remarks>
+    private static bool IsDisplayCharset(string display)
+    {
+        foreach (var character in display)
+        {
+            var allowed = character is >= 'a' and <= 'z'
+                or >= 'A' and <= 'Z'
+                or >= '0' and <= '9'
+                || IsSeparator(character);
+
+            if (!allowed)
+                return false;
+        }
+
+        return true;
+    }
 
     // Restricted to ASCII on purpose. Normalize lowercases with the invariant culture, so a value
     // that survives this is stable across cultures and matches byte-for-byte in the bloom filter.

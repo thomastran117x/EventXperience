@@ -408,4 +408,45 @@ describe('ProfileService', () => {
 
     expect(thrown?.message).toBe('Profile response was incomplete.');
   }));
+
+  /// The same defect class the profile normalisers fixed, in the same file: a raw cast against a
+  /// camelCase payload left challenge.Challenge undefined and broke the email-change OTP handoff.
+  it('reads a camelCase email-change challenge', fakeAsync(() => {
+    let received: { Challenge: string; ExpiresAtUtc: string } | undefined;
+    service.requestEmailChange('next@example.com').subscribe((value) => (received = value));
+    tick();
+
+    httpMock
+      .expectOne(`${base}/email`)
+      .flush(envelope({ challenge: 'challenge-token', expiresAtUtc: '2026-02-01T00:00:00Z' }));
+    tick();
+
+    expect(received?.Challenge).toBe('challenge-token');
+    expect(received?.ExpiresAtUtc).toBe('2026-02-01T00:00:00Z');
+  }));
+
+  it('reads a camelCase pending email change', fakeAsync(() => {
+    let received: { NewEmail: string } | null | undefined;
+    service.getPendingEmailChange().subscribe((value) => (received = value));
+    tick();
+
+    httpMock
+      .expectOne(`${base}/email/pending`)
+      .flush(envelope({ newEmail: 'next@example.com', expiresAtUtc: '2026-02-01T00:00:00Z' }));
+    tick();
+
+    expect(received?.NewEmail).toBe('next@example.com');
+  }));
+
+  /// Nothing awaiting confirmation is a normal answer, not an error.
+  it('resolves a pending email change to null when there is none', fakeAsync(() => {
+    let received: unknown = 'unset';
+    service.getPendingEmailChange().subscribe((value) => (received = value));
+    tick();
+
+    httpMock.expectOne(`${base}/email/pending`).flush(envelope(null));
+    tick();
+
+    expect(received).toBeNull();
+  }));
 });
