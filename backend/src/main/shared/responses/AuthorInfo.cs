@@ -14,6 +14,14 @@ namespace backend.main.shared.responses
         {
             get; set;
         }
+
+        /// <summary>
+        /// The username as its owner wrote it. Render this; link and look up by <c>Username</c>.
+        /// </summary>
+        public string? UsernameDisplay
+        {
+            get; set;
+        }
         public string? Avatar
         {
             get; set;

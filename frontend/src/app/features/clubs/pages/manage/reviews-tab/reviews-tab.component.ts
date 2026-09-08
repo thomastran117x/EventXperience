@@ -53,7 +53,7 @@ export class ReviewsTabComponent implements OnInit {
   }
 
   reviewerName(review: ClubReview): string {
-    return review.name || review.username || `User #${review.userId}`;
+    return review.name || review.usernameDisplay || review.username || `User #${review.userId}`;
   }
 
   reviewerInitials(review: ClubReview): string {

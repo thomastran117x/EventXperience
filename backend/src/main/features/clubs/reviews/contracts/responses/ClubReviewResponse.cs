@@ -35,13 +35,22 @@ namespace backend.main.features.clubs.reviews.contracts.responses
         {
             get; set;
         }
+
+        /// <summary>
+        /// The username as its owner wrote it. Render this; link and look up by <c>Username</c>.
+        /// </summary>
+        public string? UsernameDisplay
+        {
+            get; set;
+        }
         public string? Avatar
         {
             get; set;
         }
 
         public ClubReviewResponse(int id, int userId, int clubId, string title, int rating, string? comment, DateTime createdAt,
-            string? name = null, string? username = null, string? avatar = null)
+            string? name = null, string? username = null, string? avatar = null,
+            string? usernameDisplay = null)
         {
             Id = id;
             UserId = userId;
@@ -52,6 +61,7 @@ namespace backend.main.features.clubs.reviews.contracts.responses
             CreatedAt = createdAt;
             Name = name;
             Username = username;
+            UsernameDisplay = usernameDisplay;
             Avatar = avatar;
         }
     }

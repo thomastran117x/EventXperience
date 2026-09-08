@@ -13545,6 +13545,11 @@ components:
           oneOf:
             - type: 'null'
             - $ref: '#/components/schemas/String'
+        usernameDisplay:
+          oneOf:
+            - type: 'null'
+            - description: The username as its owner wrote it. Render this; link and look up by `Username`.
+              $ref: '#/components/schemas/String'
         avatar:
           oneOf:
             - type: 'null'
@@ -14085,6 +14090,7 @@ components:
         - createdAt
         - name
         - username
+        - usernameDisplay
         - avatar
       type: object
       properties:
@@ -14104,6 +14110,11 @@ components:
           oneOf:
             - type: 'null'
             - $ref: '#/components/schemas/String'
+        usernameDisplay:
+          oneOf:
+            - type: 'null'
+            - description: The username as its owner wrote it. Render this; link and look up by `Username`.
+              $ref: '#/components/schemas/String'
         avatar:
           oneOf:
             - type: 'null'
@@ -14312,6 +14323,11 @@ components:
           oneOf:
             - type: 'null'
             - $ref: '#/components/schemas/String'
+        usernameDisplay:
+          oneOf:
+            - type: 'null'
+            - description: The username as its owner wrote it. Render this; link and look up by `Username`.
+              $ref: '#/components/schemas/String'
         avatar:
           oneOf:
             - type: 'null'
@@ -14407,6 +14423,11 @@ components:
           oneOf:
             - type: 'null'
             - $ref: '#/components/schemas/String'
+        usernameDisplay:
+          oneOf:
+            - type: 'null'
+            - description: The username as its owner wrote it. Render this; link and look up by `Username`.
+              $ref: '#/components/schemas/String'
         avatar:
           oneOf:
             - type: 'null'
@@ -14516,6 +14537,10 @@ components:
           oneOf:
             - type: 'null'
             - $ref: '#/components/schemas/String'
+        actorUsernameDisplay:
+          oneOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/String'
     ClubVersionFieldChangeResponse:
       required:
         - field
@@ -14575,6 +14600,10 @@ components:
             - type: 'null'
             - $ref: '#/components/schemas/String'
         actorAvatar:
+          oneOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/String'
+        actorUsernameDisplay:
           oneOf:
             - type: 'null'
             - $ref: '#/components/schemas/String'

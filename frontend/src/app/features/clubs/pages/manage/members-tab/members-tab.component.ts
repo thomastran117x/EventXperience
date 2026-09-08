@@ -100,7 +100,7 @@ export class MembersTabComponent implements OnInit {
   }
 
   displayName(member: ClubMember): string {
-    return member.name || member.username || `User #${member.userId}`;
+    return member.name || member.usernameDisplay || member.username || `User #${member.userId}`;
   }
 
   initials(member: ClubMember): string {

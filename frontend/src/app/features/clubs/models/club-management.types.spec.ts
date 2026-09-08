@@ -42,6 +42,7 @@ describe('normalizeClubStaff', () => {
       updatedAt: '2026-01-02T00:00:00Z',
       name: 'Jamie Rivers',
       username: 'jrivers',
+      usernameDisplay: 'jrivers',
       avatar: 'https://example.com/a.png',
     });
   });
@@ -57,6 +58,7 @@ describe('normalizeClubStaff', () => {
       updatedAt: '',
       name: null,
       username: null,
+      usernameDisplay: null,
       avatar: null,
     });
   });
@@ -78,6 +80,7 @@ describe('camelCase precedence', () => {
         createdAt: '2026-01-01T00:00:00Z',
         name: 'Camel',
         username: 'camel',
+        usernameDisplay: 'camel',
         avatar: 'a.png',
       }),
     ).toEqual({
@@ -87,6 +90,7 @@ describe('camelCase precedence', () => {
       createdAt: '2026-01-01T00:00:00Z',
       name: 'Camel',
       username: 'camel',
+      usernameDisplay: 'camel',
       avatar: 'a.png',
     });
   });
@@ -202,6 +206,7 @@ describe('normalizeClubMember', () => {
       createdAt: '',
       name: null,
       username: null,
+      usernameDisplay: null,
       avatar: null,
     });
 
@@ -228,6 +233,7 @@ describe('normalizeClubMembersPagedData', () => {
           createdAt: '',
           name: 'Jamie Rivers',
           username: null,
+          usernameDisplay: null,
           avatar: null,
         },
       ],

@@ -41,6 +41,8 @@ export interface ClubStaff {
   updatedAt: string;
   name: string | null;
   username: string | null;
+  /** The username as its owner wrote it. Render this; link by `username`. */
+  usernameDisplay: string | null;
   avatar: string | null;
 }
 
@@ -54,6 +56,8 @@ type ClubStaffPayload = Partial<ClubStaff> & {
   UpdatedAt?: string;
   Name?: string | null;
   Username?: string | null;
+  usernameDisplay?: string | null;
+  UsernameDisplay?: string | null;
   Avatar?: string | null;
 };
 
@@ -72,6 +76,8 @@ export function normalizeClubStaff(raw: ClubStaffPayload): ClubStaff {
     updatedAt: raw.updatedAt ?? raw.UpdatedAt ?? '',
     name: raw.name ?? raw.Name ?? null,
     username: raw.username ?? raw.Username ?? null,
+    usernameDisplay:
+      raw.usernameDisplay ?? raw.UsernameDisplay ?? raw.username ?? raw.Username ?? null,
     avatar: raw.avatar ?? raw.Avatar ?? null,
   };
 }
@@ -87,6 +93,8 @@ export interface ClubMember {
   createdAt: string;
   name: string | null;
   username: string | null;
+  /** The username as its owner wrote it. Render this; link by `username`. */
+  usernameDisplay: string | null;
   avatar: string | null;
 }
 
@@ -97,6 +105,8 @@ type ClubMemberPayload = Partial<ClubMember> & {
   CreatedAt?: string;
   Name?: string | null;
   Username?: string | null;
+  usernameDisplay?: string | null;
+  UsernameDisplay?: string | null;
   Avatar?: string | null;
 };
 
@@ -108,6 +118,8 @@ export function normalizeClubMember(raw: ClubMemberPayload): ClubMember {
     createdAt: raw.createdAt ?? raw.CreatedAt ?? '',
     name: raw.name ?? raw.Name ?? null,
     username: raw.username ?? raw.Username ?? null,
+    usernameDisplay:
+      raw.usernameDisplay ?? raw.UsernameDisplay ?? raw.username ?? raw.Username ?? null,
     avatar: raw.avatar ?? raw.Avatar ?? null,
   };
 }

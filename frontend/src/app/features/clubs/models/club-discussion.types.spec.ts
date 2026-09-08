@@ -15,7 +15,13 @@ describe('club-discussion.types', () => {
         userId: 9,
         title: 'Weekend ride',
         description: 'Where should we go?',
-        author: { id: 9, name: 'Jamie', username: 'jrivers', avatar: 'a.png' },
+        author: {
+          id: 9,
+          name: 'Jamie',
+          username: 'jrivers',
+          usernameDisplay: 'jrivers',
+          avatar: 'a.png',
+        },
         createdAt: '2026-08-01T00:00:00Z',
         updatedAt: '2026-08-02T00:00:00Z',
         replyCount: 0,
@@ -27,7 +33,13 @@ describe('club-discussion.types', () => {
         userId: 9,
         title: 'Weekend ride',
         description: 'Where should we go?',
-        author: { id: 9, name: 'Jamie', username: 'jrivers', avatar: 'a.png' },
+        author: {
+          id: 9,
+          name: 'Jamie',
+          username: 'jrivers',
+          usernameDisplay: 'jrivers',
+          avatar: 'a.png',
+        },
         createdAt: '2026-08-01T00:00:00Z',
         updatedAt: '2026-08-02T00:00:00Z',
         replyCount: 0,
@@ -49,7 +61,13 @@ describe('club-discussion.types', () => {
       expect(result.id).toBe(7);
       expect(result.title).toBe('Trail conditions');
       expect(result.description).toBe('North ridge?');
-      expect(result.author).toEqual({ id: 9, name: 'Jamie', username: 'jrivers', avatar: null });
+      expect(result.author).toEqual({
+        id: 9,
+        name: 'Jamie',
+        username: 'jrivers',
+        usernameDisplay: 'jrivers',
+        avatar: null,
+      });
     });
 
     it('falls back to defaults for a sparse payload', () => {
@@ -116,14 +134,26 @@ describe('club-discussion.types', () => {
       expect(
         discussionAuthorName({
           ...base,
-          author: { id: 9, name: 'Jamie', username: 'jrivers', avatar: null },
+          author: {
+            id: 9,
+            name: 'Jamie',
+            username: 'jrivers',
+            usernameDisplay: 'jrivers',
+            avatar: null,
+          },
         }),
       ).toBe('Jamie');
 
       expect(
         discussionAuthorName({
           ...base,
-          author: { id: 9, name: null, username: 'jrivers', avatar: null },
+          author: {
+            id: 9,
+            name: null,
+            username: 'jrivers',
+            usernameDisplay: 'jrivers',
+            avatar: null,
+          },
         }),
       ).toBe('jrivers');
 

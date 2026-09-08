@@ -331,12 +331,23 @@ namespace backend.main.features.auth.token
             try
             {
                 var existingState = await GetVerificationStateAsync(user.Email, purpose);
+
+                // Both forms are compared, not just the key. Username is already normalised, so a
+                // second signup that only corrects the casing — thomast to ThomasT, before the
+                // first challenge was verified — matches on the key alone and would reuse the
+                // cached state, creating the account with the casing the user just changed away
+                // from. Comparing the display too rotates the state instead.
                 var usernameMatches = purpose != VerificationPurpose.SignUp
-                    || string.Equals(
-                        existingState?.Username,
-                        user.Username,
-                        StringComparison.Ordinal
-                    );
+                    || (string.Equals(
+                            existingState?.Username,
+                            user.Username,
+                            StringComparison.Ordinal
+                        )
+                        && string.Equals(
+                            existingState?.UsernameDisplay,
+                            user.UsernameDisplay,
+                            StringComparison.Ordinal
+                        ));
 
                 if (existingState != null && !replaceExisting && usernameMatches)
                 {

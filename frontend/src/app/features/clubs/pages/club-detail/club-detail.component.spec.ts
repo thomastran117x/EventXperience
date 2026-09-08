@@ -41,6 +41,7 @@ function makeReview(overrides: Partial<ClubReview> = {}): ClubReview {
     createdAt: '2026-01-01T00:00:00Z',
     name: 'Test Member',
     username: 'member',
+    usernameDisplay: 'member',
     avatar: null,
     ...overrides,
   };
@@ -641,19 +642,25 @@ describe('ClubDetailComponent', () => {
     it('names members and reviewers, falling back to the user id', () => {
       expect(component.memberName(makeClubMember({ name: 'Jamie' }))).toBe('Jamie');
       expect(component.memberName(makeClubMember({ name: null, username: 'jr' }))).toBe('jr');
-      expect(component.memberName(makeClubMember({ name: null, username: null, userId: 42 }))).toBe(
-        'User #42',
-      );
+      expect(
+        component.memberName(
+          makeClubMember({ name: null, username: null, usernameDisplay: null, userId: 42 }),
+        ),
+      ).toBe('User #42');
 
-      expect(component.reviewerName(makeReview({ name: null, username: null, userId: 7 }))).toBe(
-        'User #7',
-      );
+      expect(
+        component.reviewerName(
+          makeReview({ name: null, username: null, usernameDisplay: null, userId: 7 }),
+        ),
+      ).toBe('User #7');
     });
 
     it('builds member initials', () => {
       expect(component.memberInitials(makeClubMember({ name: 'Jamie' }))).toBe('JA');
       expect(
-        component.memberInitials(makeClubMember({ name: null, username: null, userId: 42 })),
+        component.memberInitials(
+          makeClubMember({ name: null, username: null, usernameDisplay: null, userId: 42 }),
+        ),
       ).toBe('#4');
     });
 

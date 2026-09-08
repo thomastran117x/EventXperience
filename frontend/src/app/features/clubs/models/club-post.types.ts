@@ -23,6 +23,8 @@ export interface AuthorInfo {
   id: number;
   name: string | null;
   username: string | null;
+  /** The username as its owner wrote it. Render this; link by `username`. */
+  usernameDisplay: string | null;
   avatar: string | null;
 }
 
@@ -94,6 +96,8 @@ type AuthorInfoPayload = Partial<AuthorInfo> & {
   Id?: number;
   Name?: string | null;
   Username?: string | null;
+  usernameDisplay?: string | null;
+  UsernameDisplay?: string | null;
   Avatar?: string | null;
 };
 
@@ -168,6 +172,8 @@ export function normalizeAuthor(raw: AuthorInfoPayload | null | undefined): Auth
     id: raw.id ?? raw.Id ?? 0,
     name: raw.name ?? raw.Name ?? null,
     username: raw.username ?? raw.Username ?? null,
+    usernameDisplay:
+      raw.usernameDisplay ?? raw.UsernameDisplay ?? raw.username ?? raw.Username ?? null,
     avatar: raw.avatar ?? raw.Avatar ?? null,
   };
 }
