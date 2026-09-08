@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Headers;
 
 using backend.main.application.security;
 using backend.main.features.auth.contracts.requests;
@@ -184,10 +185,12 @@ public class EmailChangeEndpointsTests
             message.Type == EmailMessageType.EmailChangeVerify
             && message.Email == "pending-new@example.com");
 
-        var cancel = await DeleteWithBearerAndCsrfAsync(
-            app,
-            "/api/profile/email/pending",
-            session.AccessToken);
+        var cancelRequest = new HttpRequestMessage(HttpMethod.Delete, "/api/profile/email/pending");
+        cancelRequest.Headers.Authorization =
+            new AuthenticationHeaderValue("Bearer", session.AccessToken);
+        cancelRequest.Headers.Add(CsrfConfiguration.CsrfHeaderName, await app.GetCsrfTokenAsync());
+
+        var cancel = await app.Client.SendAsync(cancelRequest);
         cancel.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var afterCancel = await app.GetWithBearerAsync(
@@ -224,6 +227,36 @@ public class EmailChangeEndpointsTests
             "/api/auth/verify/email-change",
             new EmailChangeConfirmationRequest { Token = verifyMail.Token });
         second.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    /// <summary>
+    /// The emailed link points at the API so the token survives mail clients rewriting URLs; the
+    /// API hands it to the frontend, which is where the confirmation is actually made.
+    /// </summary>
+    [Fact]
+    public async Task ConfirmLink_ShouldRedirectToTheFrontend()
+    {
+        await using var app = await AuthApiTestApp.CreateAsync();
+        var session = await SignInAsync(app, "redirect@example.com", "redirect-device");
+        await app.MarkNotificationBoundaryAsync();
+
+        await RequestChangeAsync(app, session.AccessToken, "redirect-new@example.com");
+        var verifyMail = await app.WaitForEmailAsync(message =>
+            message.Type == EmailMessageType.EmailChangeVerify
+            && message.Email == "redirect-new@example.com");
+
+        var redirect = await app.Client.GetAsync(
+            $"/api/auth/verify/email-change?token={Uri.EscapeDataString(verifyMail.Token!)}");
+
+        redirect.StatusCode.Should().Be(HttpStatusCode.Found);
+        redirect.Headers.Location!.ToString().Should().Be(
+            $"http://localhost:3090/auth/verify-email-change?token={Uri.EscapeDataString(verifyMail.Token!)}");
+
+        // Following the link must not have consumed the token - the frontend still has to confirm.
+        var confirm = await app.PostJsonWithCsrfAsync(
+            "/api/auth/verify/email-change",
+            new EmailChangeConfirmationRequest { Token = verifyMail.Token });
+        confirm.StatusCode.Should().Be(HttpStatusCode.OK, await app.DescribeFailureAsync(confirm));
     }
 
     [Fact]
@@ -265,17 +298,5 @@ public class EmailChangeEndpointsTests
 
         response.StatusCode.Should().Be(HttpStatusCode.OK, await app.DescribeFailureAsync(response));
         return (await app.ReadApiResponseAsync<VerificationChallengeResponse>(response)).Data!;
-    }
-
-    private static async Task<HttpResponseMessage> DeleteWithBearerAndCsrfAsync(
-        AuthApiTestApp app,
-        string path,
-        string accessToken)
-    {
-        var request = new HttpRequestMessage(HttpMethod.Delete, path);
-        request.Headers.Authorization =
-            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
-        request.Headers.Add(CsrfConfiguration.CsrfHeaderName, await app.GetCsrfTokenAsync());
-        return await app.Client.SendAsync(request);
     }
 }
