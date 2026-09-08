@@ -253,4 +253,65 @@ describe('ProfileService', () => {
     expect(thrown).toEqual(jasmine.any(ApiClientClientError));
     expect((thrown as ApiClientClientError).code).toBe('INVALID_CREDENTIALS');
   }));
+
+  /// The bug this normalizer exists for: the API serialises camelCase while MyProfile is declared
+  /// PascalCase, so a raw cast read every field as undefined and the display casing never rendered.
+  it('reads a camelCase profile payload, which is what the API actually sends', fakeAsync(() => {
+    let received: MyProfile | undefined;
+    service.getMyProfile().subscribe((value) => (received = value));
+    tick();
+
+    httpMock.expectOne(base).flush(
+      envelope({
+        id: 7,
+        email: 'thomas@example.com',
+        username: 'thomast',
+        usernameDisplay: 'ThomasT',
+        canChangeUsername: true,
+        usernameChangeAvailableAtUtc: null,
+        name: 'Thomas',
+        avatar: null,
+        usertype: 'Participant',
+        phone: null,
+        address: null,
+        hasLocalPassword: true,
+        googleLinked: false,
+        microsoftLinked: false,
+        createdAtUtc: '2026-01-01T00:00:00Z',
+        updatedAtUtc: '2026-01-02T00:00:00Z',
+      }),
+    );
+    tick();
+
+    expect(received?.Id).toBe(7);
+    expect(received?.Username).toBe('thomast');
+    expect(received?.UsernameDisplay).toBe('ThomasT');
+    expect(received?.CanChangeUsername).toBeTrue();
+    expect(received?.Name).toBe('Thomas');
+  }));
+
+  it('still reads a PascalCase payload, so nothing that already worked breaks', fakeAsync(() => {
+    let received: MyProfile | undefined;
+    service.getMyProfile().subscribe((value) => (received = value));
+    tick();
+
+    httpMock.expectOne(base).flush(envelope(profile));
+    tick();
+
+    expect(received).toEqual(profile);
+  }));
+
+  /// An account created before the display column carries no display form; the lookup key is what
+  /// used to be rendered and stays the correct fallback.
+  it('falls back to the username when the payload carries no display form', fakeAsync(() => {
+    let received: MyProfile | undefined;
+    service.getMyProfile().subscribe((value) => (received = value));
+    tick();
+
+    const { UsernameDisplay, ...withoutDisplay } = profile;
+    httpMock.expectOne(base).flush(envelope(withoutDisplay));
+    tick();
+
+    expect(received?.UsernameDisplay).toBe('member');
+  }));
 });

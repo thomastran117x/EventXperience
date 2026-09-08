@@ -563,30 +563,33 @@ namespace backend.main.features.auth
                 return new HashSet<string>(StringComparer.Ordinal);
 
             // Distinct so a repeated candidate cannot widen the IN list, and materialised once
-            // because EF translates the same local collection into both queries.
+            // because EF translates the same local collection into both halves of the union.
             var candidates = usernames.Distinct(StringComparer.Ordinal).ToList();
 
             // The same predicate as UsernameUnavailableAsync, evaluated over a set: a name is taken
             // if a user holds it or an unexpired reservation still covers it. Both halves have to be
             // asked, or a name cooling down after a rename would be offered as free.
-            var held = await _context.Users
+            var held = _context.Users
                 .AsNoTracking()
                 .Where(user => user.Username != null && candidates.Contains(user.Username))
-                .Select(user => user.Username!)
-                .ToListAsync();
+                .Select(user => user.Username!);
 
-            var reserved = await _context.UsernameReservations
+            var reserved = _context.UsernameReservations
                 .AsNoTracking()
                 .Where(reservation =>
                     candidates.Contains(reservation.Username)
                     && reservation.ReservedUntilUtc > utcNow)
-                .Select(reservation => reservation.Username)
-                .ToListAsync();
+                .Select(reservation => reservation.Username);
+
+            // Composed into a single UNION rather than awaited one after the other. Awaiting each
+            // half separately would be two round trips per call, and the generator can call this
+            // once per draw — so the batching this method exists for would be half undone.
+            var names = await held.Union(reserved).ToListAsync();
 
             // Username is citext, so the database may return a different casing than was asked for.
             // Normalize on the way out so the caller can match on the string it passed in.
             var taken = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var username in held.Concat(reserved))
+            foreach (var username in names)
                 taken.Add(UsernamePolicy.Normalize(username));
 
             return taken;

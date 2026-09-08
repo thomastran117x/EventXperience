@@ -6,6 +6,13 @@ import {
   extractEnvelopeData,
   requireEnvelopeData,
 } from '../../../core/api/models/api-envelope.model';
+import {
+  asRecord,
+  readBoolean,
+  readNullableString,
+  readNumber,
+  readString,
+} from '../../../core/models/payload-casing';
 import { ApiClient } from '../../../core/api/services/api-client.service';
 import { AuthTokenService } from '../../../core/api/services/auth-token.service';
 import { environment } from '../../../../environments/environment';
@@ -57,6 +64,83 @@ export interface PublicProfile {
   CreatedAtUtc: string;
 }
 
+/**
+ * The API serialises camelCase while these interfaces are declared PascalCase, so a raw cast reads
+ * every field as `undefined`. Normalising at the service boundary — the same thing
+ * `normalizeCurrentUserResponse` does for session payloads — is what makes the declared shape true.
+ *
+ * `UsernameDisplay` falls back to `Username`, so an account created before the display column, or a
+ * response from an older server, renders exactly what it renders today.
+ */
+function normalizeMyProfile(value: unknown): MyProfile | null {
+  const source = asRecord(value);
+  if (!source) {
+    return null;
+  }
+
+  const id = readNumber(source, 'Id', 'id');
+  const email = readString(source, 'Email', 'email');
+  const username = readString(source, 'Username', 'username');
+  const usertype = readString(source, 'Usertype', 'usertype');
+
+  if (id === undefined || email === undefined || username === undefined || usertype === undefined) {
+    return null;
+  }
+
+  return {
+    Id: id,
+    Email: email,
+    Username: username,
+    UsernameDisplay: readString(source, 'UsernameDisplay', 'usernameDisplay') || username,
+    CanChangeUsername: readBoolean(source, 'CanChangeUsername', 'canChangeUsername') ?? false,
+    UsernameChangeAvailableAtUtc: readNullableString(
+      source,
+      'UsernameChangeAvailableAtUtc',
+      'usernameChangeAvailableAtUtc',
+    ),
+    Name: readNullableString(source, 'Name', 'name'),
+    Avatar: readNullableString(source, 'Avatar', 'avatar'),
+    Usertype: usertype,
+    Phone: readNullableString(source, 'Phone', 'phone'),
+    Address: readNullableString(source, 'Address', 'address'),
+    HasLocalPassword: readBoolean(source, 'HasLocalPassword', 'hasLocalPassword') ?? false,
+    GoogleLinked: readBoolean(source, 'GoogleLinked', 'googleLinked') ?? false,
+    MicrosoftLinked: readBoolean(source, 'MicrosoftLinked', 'microsoftLinked') ?? false,
+    CreatedAtUtc: readString(source, 'CreatedAtUtc', 'createdAtUtc') ?? '',
+    UpdatedAtUtc: readString(source, 'UpdatedAtUtc', 'updatedAtUtc') ?? '',
+  };
+}
+
+function normalizePublicProfile(value: unknown): PublicProfile | null {
+  const source = asRecord(value);
+  if (!source) {
+    return null;
+  }
+
+  const username = readString(source, 'Username', 'username');
+  const usertype = readString(source, 'Usertype', 'usertype');
+  if (username === undefined || usertype === undefined) {
+    return null;
+  }
+
+  return {
+    Username: username,
+    UsernameDisplay: readString(source, 'UsernameDisplay', 'usernameDisplay') || username,
+    Name: readNullableString(source, 'Name', 'name'),
+    Avatar: readNullableString(source, 'Avatar', 'avatar'),
+    Usertype: usertype,
+    CreatedAtUtc: readString(source, 'CreatedAtUtc', 'createdAtUtc') ?? '',
+  };
+}
+
+function requireProfile<T>(value: T | null, message: string): T {
+  if (value === null) {
+    throw new Error(message);
+  }
+
+  return value;
+}
+
 @Injectable({ providedIn: 'root' })
 export class ProfileService {
   private readonly baseUrl = `${environment.backendUrl}/profile`;
@@ -68,33 +152,62 @@ export class ProfileService {
 
   getMyProfile(): Observable<MyProfile> {
     return this.getWithCsrf<ApiEnvelope<MyProfile>>(this.baseUrl).pipe(
-      map((res) => requireEnvelopeData(res, 'Profile response was incomplete.')),
+      map((res) =>
+        requireProfile(
+          normalizeMyProfile(requireEnvelopeData(res, 'Profile response was incomplete.')),
+          'Profile response was incomplete.',
+        ),
+      ),
     );
   }
 
   getPublicProfile(username: string): Observable<PublicProfile> {
     return this.api
       .get<ApiEnvelope<PublicProfile>>(`${this.baseUrl}/${encodeURIComponent(username)}`)
-      .pipe(map((res) => requireEnvelopeData(res, 'Profile response was incomplete.')));
+      .pipe(
+        map((res) =>
+          requireProfile(
+            normalizePublicProfile(requireEnvelopeData(res, 'Profile response was incomplete.')),
+            'Profile response was incomplete.',
+          ),
+        ),
+      );
   }
 
   updateProfile(payload: UpdateProfilePayload): Observable<MyProfile> {
     return this.patchWithCsrf<ApiEnvelope<MyProfile>>(this.baseUrl, payload).pipe(
-      map((res) => requireEnvelopeData(res, 'Profile update response was incomplete.')),
+      map((res) =>
+        requireProfile(
+          normalizeMyProfile(requireEnvelopeData(res, 'Profile update response was incomplete.')),
+          'Profile update response was incomplete.',
+        ),
+      ),
     );
   }
 
   changeUsername(username: string): Observable<MyProfile> {
     return this.patchWithCsrf<ApiEnvelope<MyProfile>>(`${this.baseUrl}/username`, {
       username,
-    }).pipe(map((res) => requireEnvelopeData(res, 'Username change response was incomplete.')));
+    }).pipe(
+      map((res) =>
+        requireProfile(
+          normalizeMyProfile(requireEnvelopeData(res, 'Username change response was incomplete.')),
+          'Username change response was incomplete.',
+        ),
+      ),
+    );
   }
 
   uploadAvatar(file: File): Observable<MyProfile> {
     const formData = new FormData();
     formData.append('image', file);
     return this.postWithCsrf<ApiEnvelope<MyProfile>>(`${this.baseUrl}/avatar`, formData).pipe(
-      map((res) => requireEnvelopeData(res, 'Avatar upload response was incomplete.')),
+      map((res) =>
+        requireProfile(
+          normalizeMyProfile(requireEnvelopeData(res, 'Avatar upload response was incomplete.')),
+          'Avatar upload response was incomplete.',
+        ),
+      ),
     );
   }
 

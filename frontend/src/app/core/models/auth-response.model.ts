@@ -1,3 +1,11 @@
+import {
+  UnknownRecord,
+  asRecord,
+  readNullableString,
+  readNumber,
+  readString,
+} from './payload-casing';
+
 export interface AuthenticatedSessionResponse {
   AccessToken: string;
   ExpiresAtUtc: string;
@@ -15,52 +23,6 @@ export interface CurrentUserResponse {
   Name?: string | null;
   Avatar?: string | null;
   Usertype: string;
-}
-
-type UnknownRecord = Record<string, unknown>;
-
-function asRecord(value: unknown): UnknownRecord | null {
-  return typeof value === 'object' && value !== null ? (value as UnknownRecord) : null;
-}
-
-function readString(source: UnknownRecord, ...keys: string[]): string | undefined {
-  for (const key of keys) {
-    const value = source[key];
-    if (typeof value === 'string') {
-      return value;
-    }
-  }
-
-  return undefined;
-}
-
-function readNullableString(source: UnknownRecord, ...keys: string[]): string | null | undefined {
-  for (const key of keys) {
-    const value = source[key];
-    if (typeof value === 'string' || value === null) {
-      return value;
-    }
-  }
-
-  return undefined;
-}
-
-function readNumber(source: UnknownRecord, ...keys: string[]): number | undefined {
-  for (const key of keys) {
-    const value = source[key];
-    if (typeof value === 'number' && Number.isFinite(value)) {
-      return value;
-    }
-
-    if (typeof value === 'string') {
-      const parsed = Number(value);
-      if (Number.isFinite(parsed)) {
-        return parsed;
-      }
-    }
-  }
-
-  return undefined;
 }
 
 export function normalizeAuthenticatedSessionResponse(

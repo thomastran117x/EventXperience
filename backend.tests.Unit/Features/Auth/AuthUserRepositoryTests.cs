@@ -565,6 +565,51 @@ public class AuthUserRepositoryTests
     }
 
     /// <summary>
+    /// The batched lookup composes two tables into one query. A union that lost either half would
+    /// still look correct for most inputs, so both halves and the expiry boundary are pinned here:
+    /// dropping the reservations half would hand out names that are still cooling down after a
+    /// rename, and dropping the users half would hand out names that are simply taken.
+    /// </summary>
+    [Fact]
+    public async Task FindUnavailableUsernamesAsync_ShouldReportHeldAndReservedNamesTogether()
+    {
+        await using var harness = await AuthUserRepositoryHarness.CreateAsync();
+        var utcNow = new DateTime(2026, 9, 8, 12, 0, 0, DateTimeKind.Utc);
+        var ownerId = await harness.SeedUserAsync(
+            email: "holder@example.com", username: "held-name");
+        harness.Db.UsernameReservations.Add(new UsernameReservation
+        {
+            Username = "cooling-name",
+            UserId = ownerId,
+            ReservedUntilUtc = utcNow.AddDays(1),
+        });
+        harness.Db.UsernameReservations.Add(new UsernameReservation
+        {
+            Username = "released-name",
+            UserId = ownerId,
+            ReservedUntilUtc = utcNow.AddMinutes(-1),
+        });
+        await harness.Db.SaveChangesAsync();
+
+        var taken = await harness.Repository.FindUnavailableUsernamesAsync(
+            ["held-name", "cooling-name", "released-name", "never-used"],
+            utcNow);
+
+        taken.Should().BeEquivalentTo(["held-name", "cooling-name"]);
+    }
+
+    [Fact]
+    public async Task FindUnavailableUsernamesAsync_ShouldReportNothing_WhenGivenNothing()
+    {
+        await using var harness = await AuthUserRepositoryHarness.CreateAsync();
+
+        var taken = await harness.Repository.FindUnavailableUsernamesAsync(
+            [], DateTime.UtcNow);
+
+        taken.Should().BeEmpty();
+    }
+
+    /// <summary>
     /// GetUserAsync hand-projects a sanitised User rather than returning the tracked entity, so any
     /// column added to the table has to be added here too. Missing this is invisible on the write
     /// path — the row is stored correctly — and only shows up as the display form reverting to the
