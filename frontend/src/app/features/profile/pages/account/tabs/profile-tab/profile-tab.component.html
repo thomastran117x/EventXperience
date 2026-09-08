@@ -253,13 +253,37 @@
                 placeholder="username"
                 class="w-full rounded-2xl border border-line bg-glass-strong px-4 py-3 text-base text-content placeholder:text-faint outline-none transition focus:border-accent focus:ring-4 focus:ring-accent/15"
               />
+              <p *ngIf="usernameChecking" class="text-sm text-muted">Checking availability…</p>
               <p
                 *ngIf="
-                  usernameForm.controls.username.invalid && usernameForm.controls.username.touched
+                  !usernameChecking && usernameForm.controls.username.hasError('usernameTaken')
                 "
                 class="text-sm text-danger"
               >
-                Username is required and must be 50 characters or fewer.
+                That username is already taken.
+              </p>
+              <p *ngIf="!usernameChecking && usernameAvailable" class="text-sm text-success">
+                That username is available.
+              </p>
+              <p
+                *ngIf="
+                  !usernameChecking &&
+                  usernameForm.controls.username.touched &&
+                  usernameFormatMessage
+                "
+                class="text-sm text-danger"
+              >
+                {{ usernameFormatMessage }}
+              </p>
+              <p
+                *ngIf="
+                  !usernameChecking &&
+                  usernameForm.controls.username.touched &&
+                  usernameForm.controls.username.hasError('required')
+                "
+                class="text-sm text-danger"
+              >
+                A username is required.
               </p>
             </div>
             <p class="text-xs leading-5 text-faint">

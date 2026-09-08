@@ -855,7 +855,11 @@ public class AuthServiceTests
             cacheService: cache,
             authSessionService: authSessionService);
 
-        var result = await service.CompleteOAuthSignupAsync(signupToken, "organizer", SessionTransport.BrowserCookie);
+        var result = await service.CompleteOAuthSignupAsync(
+            signupToken,
+            "organizer",
+            "pending-user",
+            SessionTransport.BrowserCookie);
 
         result.user.Email.Should().Be("pending@example.com");
         userRepository.Verify(repository => repository.CreateUserAsync(It.Is<backend.main.features.profile.User>(u =>
@@ -884,6 +888,7 @@ public class AuthServiceTests
         var act = () => service.CompleteOAuthSignupAsync(
             "signup-token",
             "organizer",
+            "pending-user",
             SessionTransport.ApiToken);
 
         await act.Should().ThrowAsync<UnauthorizedException>()
@@ -956,6 +961,7 @@ public class AuthServiceTests
         var result = await service.CompleteOAuthSignupAsync(
             "signup-token",
             "participant",
+            "pending-user",
             SessionTransport.BrowserCookie);
 
         result.user.Usertype.Should().Be(AuthRoles.DefaultOAuthRole);
@@ -1275,8 +1281,8 @@ public class AuthServiceTests
     }
 
     /// <summary>
-    /// OAuth accounts have no username, so this is the only filter write the path makes. Without
-    /// it a provider-created address keeps reporting as free until the next scheduled rebuild.
+    /// Without this write a provider-created address keeps reporting as free until the next
+    /// scheduled rebuild.
     /// </summary>
     [Fact]
     public async Task CompleteOAuthSignupAsync_ShouldRecordTheAddress_ForANewAccount()
@@ -1284,7 +1290,11 @@ public class AuthServiceTests
         var emailAvailability = new Mock<IEmailAvailabilityService>();
         var service = CreateOAuthSignupService(emailAvailability, existingUser: false);
 
-        await service.CompleteOAuthSignupAsync("signup-token", "organizer", SessionTransport.BrowserCookie);
+        await service.CompleteOAuthSignupAsync(
+            "signup-token",
+            "organizer",
+            "pending-user",
+            SessionTransport.BrowserCookie);
 
         emailAvailability.Verify(
             availability => availability.MarkRegisteredAsync("pending@example.com", It.IsAny<CancellationToken>()),
@@ -1301,7 +1311,11 @@ public class AuthServiceTests
         var emailAvailability = new Mock<IEmailAvailabilityService>();
         var service = CreateOAuthSignupService(emailAvailability, existingUser: true);
 
-        await service.CompleteOAuthSignupAsync("signup-token", "organizer", SessionTransport.BrowserCookie);
+        await service.CompleteOAuthSignupAsync(
+            "signup-token",
+            "organizer",
+            "pending-user",
+            SessionTransport.BrowserCookie);
 
         emailAvailability.Verify(
             availability => availability.MarkRegisteredAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
@@ -1424,9 +1438,118 @@ public class AuthServiceTests
             emailAvailability: emailAvailability.Object);
     }
 
+    [Fact]
+    public async Task CompleteOAuthSignupAsync_ShouldCreateTheAccountWithTheNormalizedUsername()
+    {
+        var emailAvailability = new Mock<IEmailAvailabilityService>();
+        var usernameAvailability = new Mock<IUsernameAvailabilityService>();
+        var service = CreateOAuthSignupService(
+            emailAvailability,
+            existingUser: false,
+            usernameAvailability);
+
+        var result = await service.CompleteOAuthSignupAsync(
+            "signup-token",
+            "organizer",
+            "  Pending.User  ",
+            SessionTransport.BrowserCookie);
+
+        result.user.Username.Should().Be("pending.user");
+        usernameAvailability.Verify(
+            availability => availability.MarkTakenAsync("pending.user", It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("ab")]
+    [InlineData("a..b")]
+    [InlineData("admin")]
+    public async Task CompleteOAuthSignupAsync_ShouldRejectAUsernameTheApiWouldNotAccept(string? username)
+    {
+        var emailAvailability = new Mock<IEmailAvailabilityService>();
+        var service = CreateOAuthSignupService(emailAvailability, existingUser: false);
+
+        var act = () => service.CompleteOAuthSignupAsync(
+            "signup-token",
+            "organizer",
+            username,
+            SessionTransport.BrowserCookie);
+
+        await act.Should().ThrowAsync<BadRequestException>();
+    }
+
+    /// <summary>
+    /// The pending-signup key is only deleted once the account exists, so a name claimed between
+    /// the callback and this call leaves the token usable for a retry under a different name.
+    /// </summary>
+    [Fact]
+    public async Task CompleteOAuthSignupAsync_ShouldKeepThePendingTokenWhenTheUsernameIsTaken()
+    {
+        var emailAvailability = new Mock<IEmailAvailabilityService>();
+        var usernameAvailability = new Mock<IUsernameAvailabilityService>();
+        usernameAvailability.Setup(availability => availability.IsUnavailableAsync(
+                "pending-user",
+                It.IsAny<DateTime>(),
+                It.IsAny<AvailabilityLookupMode>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        var cache = new Mock<ICacheService>();
+        var service = CreateOAuthSignupService(
+            emailAvailability,
+            existingUser: false,
+            usernameAvailability,
+            cache);
+
+        var act = () => service.CompleteOAuthSignupAsync(
+            "signup-token",
+            "organizer",
+            "pending-user",
+            SessionTransport.BrowserCookie);
+
+        await act.Should().ThrowAsync<UsernameTakenException>();
+        cache.Verify(c => c.DeleteKeyAsync("oauth:pending:signup-token"), Times.Never);
+    }
+
+    /// <summary>
+    /// The caller cannot know whether the provider account is new, so a username may arrive on the
+    /// link branch too. Applying it would rename an existing account from an unauthenticated token,
+    /// bypassing the MFA gate and cooldown on PATCH /profile/username.
+    /// </summary>
+    [Fact]
+    public async Task CompleteOAuthSignupAsync_ShouldIgnoreTheUsernameWhenLinkingAnExistingAccount()
+    {
+        var emailAvailability = new Mock<IEmailAvailabilityService>();
+        var usernameAvailability = new Mock<IUsernameAvailabilityService>();
+        var service = CreateOAuthSignupService(
+            emailAvailability,
+            existingUser: true,
+            usernameAvailability);
+
+        await service.CompleteOAuthSignupAsync(
+            "signup-token",
+            "organizer",
+            "someone-elses-name",
+            SessionTransport.BrowserCookie);
+
+        usernameAvailability.Verify(
+            availability => availability.MarkTakenAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        usernameAvailability.Verify(
+            availability => availability.IsUnavailableAsync(
+                It.IsAny<string>(),
+                It.IsAny<DateTime>(),
+                It.IsAny<AvailabilityLookupMode>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
     private static AuthService CreateOAuthSignupService(
         Mock<IEmailAvailabilityService> emailAvailability,
-        bool existingUser)
+        bool existingUser,
+        Mock<IUsernameAvailabilityService>? usernameAvailability = null,
+        Mock<ICacheService>? cacheOverride = null)
     {
         var pendingJson = JsonConvert.SerializeObject(new
         {
@@ -1437,7 +1560,7 @@ public class AuthServiceTests
             Transport = SessionTransport.BrowserCookie
         });
 
-        var cache = new Mock<ICacheService>();
+        var cache = cacheOverride ?? new Mock<ICacheService>();
         cache.Setup(service => service.GetValueAsync("oauth:pending:signup-token"))
             .ReturnsAsync(pendingJson);
         cache.Setup(service => service.DeleteKeyAsync("oauth:pending:signup-token"))
@@ -1447,6 +1570,7 @@ public class AuthServiceTests
         {
             Id = 77,
             Email = "pending@example.com",
+            Username = "pending-user",
             Usertype = "Organizer",
             GoogleID = "google-42",
             AuthVersion = 1
@@ -1466,15 +1590,21 @@ public class AuthServiceTests
                 : null);
         userRepository.Setup(repository => repository.GetOAuthByEmailAsync("pending@example.com"))
             .ReturnsAsync((UserOAuthRecord?)null);
+        // Echo the username back so assertions see the value the service actually chose.
         userRepository.Setup(repository => repository.CreateUserAsync(It.IsAny<backend.main.features.profile.User>()))
-            .ReturnsAsync(user);
+            .ReturnsAsync((backend.main.features.profile.User created) =>
+            {
+                user.Username = created.Username;
+                return user;
+            });
 
         return CreateService(
             userRepository: userRepository,
             tokenService: CreateTokenServiceForUser(user),
             cacheService: cache,
             authSessionService: CreateAuthSessionServiceForUser(user),
-            emailAvailability: emailAvailability.Object);
+            emailAvailability: emailAvailability.Object,
+            usernameAvailability: usernameAvailability?.Object);
     }
 
     private static AuthService CreateService(
@@ -1489,7 +1619,8 @@ public class AuthServiceTests
         Mock<ILoginStepUpChallengeService>? loginStepUpChallengeService = null,
         Mock<IAuthSessionService>? authSessionService = null,
         SeedAccountBypassPolicy? seedBypass = null,
-        IEmailAvailabilityService? emailAvailability = null)
+        IEmailAvailabilityService? emailAvailability = null,
+        IUsernameAvailabilityService? usernameAvailability = null)
     {
         userRepository ??= new Mock<IAuthUserRepository>();
         oauthService ??= new Mock<IOAuthService>();
@@ -1507,6 +1638,9 @@ public class AuthServiceTests
         emailAvailability ??= new EmailAvailabilityService(
             userRepository.Object,
             new DisabledBloomFilterRegistry());
+        usernameAvailability ??= new UsernameAvailabilityService(
+            userRepository.Object,
+            new DisabledBloomFilterRegistry());
 
         return new AuthService(
             userRepository.Object,
@@ -1519,7 +1653,7 @@ public class AuthServiceTests
             deviceTrustService.Object,
             loginStepUpChallengeService.Object,
             authSessionService.Object,
-            new UsernameAvailabilityService(userRepository.Object, new DisabledBloomFilterRegistry()),
+            usernameAvailability,
             emailAvailability,
             seedBypass,
             TestRequestInfoFactory.Browser());

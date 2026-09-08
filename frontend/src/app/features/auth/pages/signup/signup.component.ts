@@ -17,6 +17,7 @@ import {
   normalizeUsername,
   usernameAvailabilityValidator,
 } from '../../validators/username-availability.validator';
+import { usernameFormatValidator } from '../../validators/username-format.validator';
 
 @Component({
   selector: 'app-signup',
@@ -53,7 +54,7 @@ export class SignupComponent {
       ],
     }),
     username: this.fb.nonNullable.control('', {
-      validators: [Validators.required, Validators.maxLength(50)],
+      validators: [Validators.required, usernameFormatValidator],
       asyncValidators: [
         usernameAvailabilityValidator(this.auth, (username) =>
           this.confirmedAvailable.set(username),
@@ -102,6 +103,11 @@ export class SignupComponent {
       confirmed === normalizeUsername(this.form.controls.username.value)
     );
   });
+
+  /** The server's own wording for why this value would be rejected, or null when it is fine. */
+  usernameFormatMessage(): string | null {
+    return this.form.controls.username.errors?.['usernameFormat']?.message ?? null;
+  }
 
   constructor(
     private recaptcha: RecaptchaV3Service,

@@ -44,6 +44,7 @@ namespace backend.main.features.auth
         Task<UserToken> CompleteOAuthSignupAsync(
             string signupToken,
             string usertype,
+            string? username,
             SessionTransport transport
         );
         Task<User> GetCurrentUserAsync(int userId);

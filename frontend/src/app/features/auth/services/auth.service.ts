@@ -417,15 +417,21 @@ export class AuthService {
     );
   }
 
+  /**
+   * `username` is required when the provider account is new and ignored when it links to one that
+   * already exists. The caller cannot tell the two apart, so it always sends one.
+   */
   completeOAuthSignup(
     signupToken: string,
     usertype: SignupRole,
+    username: string,
   ): Observable<AuthenticatedSessionResponse> {
     return this.postWithCsrf<ApiEnvelope<AuthenticatedSessionResponse>>(
       `${this.baseUrl}/oauth/complete`,
       {
         signupToken,
         usertype,
+        username,
         transport: 'browser' as const,
       },
     ).pipe(

@@ -92,6 +92,45 @@ describe('AuthService', () => {
     });
   }));
 
+  it('posts the chosen username alongside the role when completing an OAuth signup', fakeAsync(() => {
+    let responseBody: unknown;
+
+    service
+      .completeOAuthSignup('signup-token', 'organizer', 'ada.lovelace')
+      .subscribe((response) => {
+        responseBody = response;
+      });
+
+    tick();
+
+    const request = httpMock.expectOne((req) => req.url.endsWith('/auth/oauth/complete'));
+    expect(authToken.ensureCsrfToken).toHaveBeenCalled();
+    expect(request.request.method).toBe('POST');
+    expect(request.request.withCredentials).toBeTrue();
+    expect(request.request.body).toEqual({
+      signupToken: 'signup-token',
+      usertype: 'organizer',
+      username: 'ada.lovelace',
+      transport: 'browser',
+    });
+
+    request.flush({
+      success: true,
+      message: 'ok',
+      data: {
+        AccessToken: 'token',
+        ExpiresAtUtc: '2026-06-20T18:00:00Z',
+      },
+      error: null,
+      meta: null,
+    });
+
+    expect(responseBody).toEqual({
+      AccessToken: 'token',
+      ExpiresAtUtc: '2026-06-20T18:00:00Z',
+    });
+  }));
+
   it('posts step-up start and verify payloads', fakeAsync(() => {
     let startResponse: unknown;
     let verifyResponse: unknown;

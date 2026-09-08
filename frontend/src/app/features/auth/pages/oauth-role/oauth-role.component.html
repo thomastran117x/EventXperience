@@ -18,6 +18,31 @@
 
     @if (pending()) {
       <form [formGroup]="form" (ngSubmit)="submit()" class="oauth-role-form">
+        <div class="oauth-role-field">
+          <label class="oauth-role-field-label" for="oauth-username">Choose a username</label>
+          <input
+            id="oauth-username"
+            type="text"
+            formControlName="username"
+            autocomplete="username"
+            placeholder="username"
+            class="oauth-role-input"
+          />
+          @if (usernameChecking()) {
+            <p class="oauth-role-hint">Checking availability…</p>
+          } @else if (form.controls['username'].hasError('usernameTaken')) {
+            <p class="oauth-role-hint oauth-role-hint-error">That username is already taken.</p>
+          } @else if (usernameAvailable()) {
+            <p class="oauth-role-hint oauth-role-hint-ok">That username is available.</p>
+          } @else if ((submitted || form.controls['username'].touched) && usernameFormatMessage()) {
+            <p class="oauth-role-hint oauth-role-hint-error">{{ usernameFormatMessage() }}</p>
+          } @else if (submitted && form.controls['username'].invalid) {
+            <p class="oauth-role-hint oauth-role-hint-error">A username is required.</p>
+          } @else {
+            <p class="oauth-role-hint">You will use this to sign in. You can change it later.</p>
+          }
+        </div>
+
         @for (option of roleOptions; track option) {
           <label
             class="oauth-role-option"

@@ -391,12 +391,137 @@ public class AuthEndpointsTests
         expired.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
+    /// <summary>
+    /// Every account gets a username, including ones created through a provider. Without this the
+    /// column keeps acquiring nulls and /api/auth/me falls back to showing the email as the handle.
+    /// </summary>
+    [Fact]
+    public async Task CompleteOAuthSignup_ShouldRequireAUsernameWhenTheProviderAccountIsNew()
+    {
+        await using var app = await AuthApiTestApp.CreateAsync();
+
+        app.OAuth.RegisterGoogleToken(
+            "google-username-token",
+            new OAuthUser("google-username-1", "oauth.username@example.com", "OAuth User", "google"));
+
+        var pending = await app.PostJsonWithCsrfAsync("/api/auth/google", new GoogleRequest
+        {
+            Token = "google-username-token",
+            Transport = SessionTransportResolver.ApiValue
+        });
+        var pendingBody = await app.ReadApiResponseAsync<OAuthAuthenticationResponse>(pending);
+        pendingBody.Data!.RequiresRoleSelection.Should().BeTrue();
+        var signupToken = pendingBody.Data.SignupToken!;
+
+        var missing = await app.PostJsonWithCsrfAsync("/api/auth/oauth/complete", new CompleteOAuthSignupRequest
+        {
+            SignupToken = signupToken,
+            Usertype = "Participant",
+            Transport = SessionTransportResolver.ApiValue
+        });
+        missing.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        var malformed = await app.PostJsonWithCsrfAsync("/api/auth/oauth/complete", new CompleteOAuthSignupRequest
+        {
+            SignupToken = signupToken,
+            Usertype = "Participant",
+            Username = "a..b",
+            Transport = SessionTransportResolver.ApiValue
+        });
+        malformed.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        // Neither rejection consumed the pending signup, so the same token still completes.
+        var success = await app.PostJsonWithCsrfAsync("/api/auth/oauth/complete", new CompleteOAuthSignupRequest
+        {
+            SignupToken = signupToken,
+            Usertype = "Participant",
+            Username = "  OAuth.User  ",
+            Transport = SessionTransportResolver.ApiValue
+        });
+        var successBody = await app.ReadApiResponseAsync<AuthenticatedSessionResponse>(success);
+        success.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var request = new HttpRequestMessage(HttpMethod.Get, "/api/auth/me");
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue(
+            "Bearer", successBody.Data!.AccessToken);
+        var me = await app.Client.SendAsync(request);
+        var meBody = await app.ReadApiResponseAsync<CurrentUserResponse>(me);
+        meBody.Data!.Username.Should().Be("oauth.user");
+    }
+
+    /// <summary>
+    /// A name claimed between the provider callback and this call is a 409, and the pending signup
+    /// survives it, so the user can pick another name on the same token.
+    /// </summary>
+    [Fact]
+    public async Task CompleteOAuthSignup_ShouldAllowARetryAfterTheUsernameWasTaken()
+    {
+        await using var app = await AuthApiTestApp.CreateAsync();
+
+        await app.SeedUserAsync("holder@example.com", username: "contested-name");
+        app.OAuth.RegisterGoogleToken(
+            "google-retry-token",
+            new OAuthUser("google-retry-1", "oauth.retry@example.com", "OAuth Retry", "google"));
+
+        var pending = await app.PostJsonWithCsrfAsync("/api/auth/google", new GoogleRequest
+        {
+            Token = "google-retry-token",
+            Transport = SessionTransportResolver.ApiValue
+        });
+        var signupToken = (await app.ReadApiResponseAsync<OAuthAuthenticationResponse>(pending))
+            .Data!.SignupToken!;
+
+        var conflict = await app.PostJsonWithCsrfAsync("/api/auth/oauth/complete", new CompleteOAuthSignupRequest
+        {
+            SignupToken = signupToken,
+            Usertype = "Participant",
+            Username = "contested-name",
+            Transport = SessionTransportResolver.ApiValue
+        });
+        conflict.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        var retry = await app.PostJsonWithCsrfAsync("/api/auth/oauth/complete", new CompleteOAuthSignupRequest
+        {
+            SignupToken = signupToken,
+            Usertype = "Participant",
+            Username = "uncontested-name",
+            Transport = SessionTransportResolver.ApiValue
+        });
+        retry.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var created = await app.FindUserByEmailAsync("oauth.retry@example.com");
+        created!.Username.Should().Be("uncontested-name");
+    }
+
+    /// <summary>
+    /// The executable form of "enforce on new values only". SeedUserAsync writes straight to the
+    /// DbContext, bypassing CreateUserAsync, so it can plant the kind of row the backfill migration
+    /// produced: those accounts must still sign in and still resolve their public profile.
+    /// </summary>
+    [Fact]
+    public async Task LegacyUsernamesThatPredateTheFormatRules_ShouldStillWork()
+    {
+        await using var app = await AuthApiTestApp.CreateAsync();
+
+        // Repeated separators and mixed case: exactly what the backfill migration could emit.
+        var legacy = await app.SeedUserAsync("legacy@example.com", username: "Legacy__Name");
+        await app.SeedKnownDeviceAsync(legacy.Id, "legacy-device");
+
+        await app.LoginApiAsync("Legacy__Name", trustedDeviceToken: "legacy-device");
+
+        var profile = await app.Client.GetAsync("/api/profile/Legacy__Name");
+        profile.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
     [Fact]
     public async Task Me_ShouldReturnCurrentUserForAuthenticatedAccessToken()
     {
         await using var app = await AuthApiTestApp.CreateAsync();
 
-        var session = await app.SignUpAndVerifyByTokenAsync("me@example.com", role: "Organizer");
+        var session = await app.SignUpAndVerifyByTokenAsync(
+            "me@example.com",
+            role: "Organizer",
+            username: "me-user");
         var request = new HttpRequestMessage(HttpMethod.Get, "/api/auth/me");
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", session.AccessToken);
 

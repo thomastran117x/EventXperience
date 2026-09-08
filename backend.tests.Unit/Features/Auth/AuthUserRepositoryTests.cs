@@ -35,6 +35,70 @@ public class AuthUserRepositoryTests
         stored.Name.Should().Be("New User");
     }
 
+    /// <summary>
+    /// Callers check availability outside the transaction, so two signups can both see a name as
+    /// free and race to insert it. The loser must get the same conflict the pre-flight check
+    /// produces, not the unique-index violation as a 500.
+    /// </summary>
+    [Fact]
+    public async Task CreateUserAsync_ShouldReportAConflict_WhenItLosesTheRaceForAUsername()
+    {
+        await using var harness = await AuthUserRepositoryHarness.CreateAsync();
+        await harness.SeedUserAsync(email: "holder@example.com", username: "contested-name");
+
+        var act = () => harness.Repository.CreateUserAsync(new User
+        {
+            Email = "loser@example.com",
+            Username = "contested-name",
+            Password = "hashed-password",
+            Usertype = "participant"
+        });
+
+        var exception = await act.Should().ThrowAsync<UsernameTakenException>();
+        exception.Which.ErrorCode.Should().Be("USERNAME_TAKEN");
+    }
+
+    /// <summary>
+    /// The Postgres branch of the detector matches on the index name, and no unit test can reach
+    /// it because the harness runs SQLite. Pin the name against the model instead: if EF ever
+    /// names the index differently, a real race would quietly go back to being a 500.
+    /// </summary>
+    [Fact]
+    public async Task TheUsernameUniqueIndex_ShouldBeNamedAsTheConflictDetectorExpects()
+    {
+        await using var harness = await AuthUserRepositoryHarness.CreateAsync();
+
+        var index = harness.Db.Model
+            .FindEntityType(typeof(User))!
+            .GetIndexes()
+            .Single(candidate => candidate.IsUnique
+                && candidate.Properties.Count == 1
+                && candidate.Properties[0].Name == nameof(User.Username));
+
+        index.GetDatabaseName().Should().Be("IX_Users_Username");
+    }
+
+    /// <summary>
+    /// Narrow on purpose: the same insert can collide on Email, GoogleID or MicrosoftID, and
+    /// reporting one of those as a taken username would send the caller to fix the wrong field.
+    /// </summary>
+    [Fact]
+    public async Task CreateUserAsync_ShouldNotReportAUsernameConflict_ForACollisionOnAnotherColumn()
+    {
+        await using var harness = await AuthUserRepositoryHarness.CreateAsync();
+        await harness.SeedUserAsync(email: "duplicate@example.com", username: "first-name");
+
+        var act = () => harness.Repository.CreateUserAsync(new User
+        {
+            Email = "duplicate@example.com",
+            Username = "second-name",
+            Password = "hashed-password",
+            Usertype = "participant"
+        });
+
+        await act.Should().ThrowAsync<DbUpdateException>();
+    }
+
     [Fact]
     public async Task CreateUserAsync_ShouldRemoveExpiredReservation_WhenUsernameIsClaimed()
     {

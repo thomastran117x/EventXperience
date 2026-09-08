@@ -203,6 +203,10 @@
                 <div class="mt-2 text-sm text-danger">That username is already taken.</div>
               } @else if (usernameAvailable()) {
                 <div class="mt-2 text-sm text-success">That username is available.</div>
+              } @else if (
+                (submitted || form.controls['username'].touched) && usernameFormatMessage()
+              ) {
+                <div class="mt-2 text-sm text-danger">{{ usernameFormatMessage() }}</div>
               } @else if (submitted && form.controls['username'].invalid) {
                 <div class="mt-2 text-sm text-danger">A username is required.</div>
               }

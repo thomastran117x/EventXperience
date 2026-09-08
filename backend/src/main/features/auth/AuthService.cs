@@ -550,6 +550,7 @@ namespace backend.main.features.auth
         public async Task<UserToken> CompleteOAuthSignupAsync(
             string signupToken,
             string usertype,
+            string? username,
             SessionTransport transport
         )
         {
@@ -579,22 +580,32 @@ namespace backend.main.features.auth
 
                 if (user == null)
                 {
+                    // Same shape as VerifyAsync: validate, check authoritatively because the insert
+                    // is a few lines away, then create and record both names in the filters.
+                    var newUsername = UsernamePolicy.NormalizeAndValidate(username);
+                    if (await _usernameAvailability.IsUnavailableAsync(newUsername, DateTime.UtcNow))
+                        throw new UsernameTakenException(newUsername);
+
                     user = await _userRepository.CreateUserAsync(new User
                     {
                         Email = pending.Email,
+                        Username = newUsername,
                         Usertype = usertype,
                         GoogleID = pending.Provider == "google" ? pending.ProviderUserId : null,
                         MicrosoftID = pending.Provider == "microsoft"
                             ? pending.ProviderUserId
                             : null,
                     });
-                    // OAuth accounts have no username, so this is the only filter write the path
-                    // makes. Without it an address that signed up through a provider would keep
-                    // reporting as free until the next scheduled rebuild.
+                    // Without these writes, the name and address that just signed up through a
+                    // provider would keep reporting as free until the next scheduled rebuild.
+                    await _usernameAvailability.MarkTakenAsync(newUsername);
                     await _emailAvailability.MarkRegisteredAsync(EmailPolicy.Normalize(user.Email));
                 }
                 else
                 {
+                    // Any username supplied is deliberately ignored here. The provider account
+                    // resolved to one that already exists, and renaming it from an unauthenticated
+                    // signup token would bypass the MFA gate and cooldown on PATCH /profile/username.
                     await EnsureUserEnabledAsync(user);
                     user = await EnsureOAuthRoleAsync(user);
                 }

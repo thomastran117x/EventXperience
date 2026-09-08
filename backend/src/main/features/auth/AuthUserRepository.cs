@@ -48,6 +48,17 @@ namespace backend.main.features.auth
                     await transaction.CommitAsync();
                     return user;
                 }
+                // The availability check callers run before this happens outside the transaction,
+                // so two signups can both see the same name as free and race to insert it. The
+                // loser hits the unique index; without this it would surface as a 500 rather than
+                // the 409 the caller already knows how to turn into "pick another name".
+                catch (Exception exception)
+                    when (user.Username != null && IsUsernameUniqueViolation(exception))
+                {
+                    await transaction.RollbackAsync();
+                    _context.ChangeTracker.Clear();
+                    throw new UsernameTakenException(user.Username);
+                }
                 catch
                 {
                     await transaction.RollbackAsync();
@@ -541,6 +552,9 @@ namespace backend.main.features.auth
                     if (user == null)
                         return new UsernameChangeRecord(UsernameChangeStatus.UserNotFound);
 
+                    // The name being replaced, so Normalize rather than NormalizeAndValidate: it
+                    // may predate the format rules, and validating it here would leave the owner
+                    // permanently unable to rename away from it.
                     var currentUsername = string.IsNullOrWhiteSpace(user.Username)
                         ? null
                         : UsernamePolicy.Normalize(user.Username);
@@ -694,6 +708,39 @@ namespace backend.main.features.auth
                     throw;
                 }
             });
+        }
+
+        /// <summary>Name EF gives the unique index on <c>Users.Username</c>.</summary>
+        private const string UsernameUniqueIndexName = "IX_Users_Username";
+
+        /// <summary>
+        /// Whether a failed write lost the race on the unique username index specifically.
+        /// </summary>
+        /// <remarks>
+        /// Deliberately narrower than <see cref="IsWriteConflict"/>, which answers "lost a race on
+        /// something" for any constraint. <see cref="CreateUserAsync"/> can equally collide on
+        /// Email, GoogleID or MicrosoftID, and reporting one of those as a taken username would
+        /// send the caller off to change the wrong field. Postgres names the index it violated;
+        /// SQLite, used by the repository tests, only names the columns in its message.
+        /// </remarks>
+        private static bool IsUsernameUniqueViolation(Exception exception)
+        {
+            var databaseException = exception is DbUpdateException
+                ? exception.InnerException
+                : exception;
+
+            return databaseException switch
+            {
+                PostgresException postgres =>
+                    postgres.SqlState == PostgresErrorCodes.UniqueViolation
+                    && string.Equals(
+                        postgres.ConstraintName,
+                        UsernameUniqueIndexName,
+                        StringComparison.Ordinal),
+                SqliteException { SqliteErrorCode: 19 } sqlite =>
+                    sqlite.Message.Contains("Users.Username", StringComparison.OrdinalIgnoreCase),
+                _ => false
+            };
         }
 
         private static bool IsWriteConflict(Exception exception)
