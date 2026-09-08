@@ -132,6 +132,11 @@ describe('toUsernameDisplay', () => {
   it('normalises to the same value the availability probe uses', () => {
     expect(normalizeUsername(toUsernameDisplay('  ThomasT  '))).toBe('thomast');
   });
+
+  it('treats a missing value as empty rather than throwing', () => {
+    expect(toUsernameDisplay(null as unknown as string)).toBe('');
+    expect(toUsernameDisplay(undefined as unknown as string)).toBe('');
+  });
 });
 
 describe('mixed case', () => {

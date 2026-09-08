@@ -4,7 +4,7 @@ import { fakeAsync, tick } from '@angular/core/testing';
 import { environment } from '@environments/environment';
 import { envelope, errorEnvelope, setupService } from '@testing';
 
-import { MyProfile, ProfileService } from './profile.service';
+import { MyProfile, ProfileService, PublicProfile } from './profile.service';
 import { ApiClient } from '../../../core/api/services/api-client.service';
 import { AuthTokenService } from '../../../core/api/services/auth-token.service';
 import { ApiClientClientError } from '../../../core/api/models/api-client-error.model';
@@ -313,5 +313,99 @@ describe('ProfileService', () => {
     tick();
 
     expect(received?.UsernameDisplay).toBe('member');
+  }));
+
+  it('reads a camelCase public profile and renders the display casing', fakeAsync(() => {
+    let received: PublicProfile | undefined;
+    service.getPublicProfile('thomast').subscribe((value) => (received = value));
+
+    httpMock.expectOne(`${base}/thomast`).flush(
+      envelope({
+        username: 'thomast',
+        usernameDisplay: 'ThomasT',
+        name: null,
+        avatar: null,
+        usertype: 'Participant',
+        createdAtUtc: '2026-01-01T00:00:00Z',
+      }),
+    );
+    tick();
+
+    expect(received?.Username).toBe('thomast');
+    expect(received?.UsernameDisplay).toBe('ThomasT');
+    expect(received?.Name).toBeNull();
+  }));
+
+  it('falls back to the username on a public profile with no display form', fakeAsync(() => {
+    let received: PublicProfile | undefined;
+    service.getPublicProfile('legacy').subscribe((value) => (received = value));
+
+    httpMock
+      .expectOne(`${base}/legacy`)
+      .flush(envelope({ username: 'legacy', usertype: 'Participant' }));
+    tick();
+
+    expect(received?.UsernameDisplay).toBe('legacy');
+    expect(received?.CreatedAtUtc).toBe('');
+  }));
+
+  /// A payload missing a field the interface declares as required is a broken contract, not
+  /// something to paper over with a half-built object.
+  it('errors when a public profile payload is missing its username', fakeAsync(() => {
+    let thrown: Error | undefined;
+    service.getPublicProfile('ghost').subscribe({ error: (err: Error) => (thrown = err) });
+
+    httpMock.expectOne(`${base}/ghost`).flush(envelope({ usertype: 'Participant' }));
+    tick();
+
+    expect(thrown?.message).toBe('Profile response was incomplete.');
+  }));
+
+  it('errors when the profile payload is not an object at all', fakeAsync(() => {
+    let thrown: Error | undefined;
+    service.getMyProfile().subscribe({ error: (err: Error) => (thrown = err) });
+    tick();
+
+    httpMock.expectOne(base).flush(envelope('not-a-profile'));
+    tick();
+
+    expect(thrown?.message).toBe('Profile response was incomplete.');
+  }));
+
+  /// Booleans and timestamps a partial payload omits must land as usable defaults rather than
+  /// undefined, since the account page branches on them.
+  it('defaults the flags and timestamps a partial profile payload omits', fakeAsync(() => {
+    let received: MyProfile | undefined;
+    service.getMyProfile().subscribe((value) => (received = value));
+    tick();
+
+    httpMock.expectOne(base).flush(
+      envelope({
+        id: 3,
+        email: 'partial@example.com',
+        username: 'partial',
+        usertype: 'Participant',
+      }),
+    );
+    tick();
+
+    expect(received?.CanChangeUsername).toBeFalse();
+    expect(received?.HasLocalPassword).toBeFalse();
+    expect(received?.GoogleLinked).toBeFalse();
+    expect(received?.MicrosoftLinked).toBeFalse();
+    expect(received?.CreatedAtUtc).toBe('');
+    expect(received?.UpdatedAtUtc).toBe('');
+    expect(received?.UsernameDisplay).toBe('partial');
+  }));
+
+  it('errors when the profile payload is missing a required field', fakeAsync(() => {
+    let thrown: Error | undefined;
+    service.getMyProfile().subscribe({ error: (err: Error) => (thrown = err) });
+    tick();
+
+    httpMock.expectOne(base).flush(envelope({ id: 1, email: 'x@example.com' }));
+    tick();
+
+    expect(thrown?.message).toBe('Profile response was incomplete.');
   }));
 });
