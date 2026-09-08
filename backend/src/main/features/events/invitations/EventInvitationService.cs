@@ -580,6 +580,39 @@ public sealed class EventInvitationService : IEventInvitationService
             MyInvitationsTTL) ?? [];
     }
 
+    public async Task RelinkForEmailChangeAsync(
+        int userId,
+        string previousNormalizedEmail,
+        string newNormalizedEmail)
+    {
+        var now = GetUtcNow();
+
+        var orphaned = await _db.EventInvitations
+            .Where(i =>
+                i.RecipientUserId == null &&
+                i.LifecycleStatus == EventInvitationLifecycleStatus.Pending &&
+                (i.RecipientEmailNormalized == previousNormalizedEmail ||
+                 i.RecipientEmailNormalized == newNormalizedEmail))
+            .ToListAsync();
+
+        if (orphaned.Count > 0)
+        {
+            foreach (var invitation in orphaned)
+            {
+                // Binding to the id rather than rewriting the address keeps the invitation's own
+                // record of who it was sent to intact, and makes the match survive any later
+                // change too.
+                invitation.RecipientUserId = userId;
+                invitation.UpdatedAt = now;
+            }
+
+            await _db.SaveChangesAsync();
+        }
+
+        await _refreshCache.RemoveAsync(GetMyInvitationsCacheKey(userId, previousNormalizedEmail));
+        await _refreshCache.RemoveAsync(GetMyInvitationsCacheKey(userId, newNormalizedEmail));
+    }
+
     public async Task MarkInvitationDeliveryStatusAsync(int invitationId, EventInvitationDeliveryStatus status, string? errorMessage)
     {
         var invitation = await _db.EventInvitations.FirstOrDefaultAsync(i => i.Id == invitationId);

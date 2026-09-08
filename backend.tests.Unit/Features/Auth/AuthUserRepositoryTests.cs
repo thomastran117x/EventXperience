@@ -269,6 +269,94 @@ public class AuthUserRepositoryTests
         profile.Usertype.Should().Be("Participant");
     }
 
+    /// <summary>
+    /// The AuthVersion bump has to land in the same commit as the address. JwtConfiguration checks
+    /// the claim on every request, so a change that committed without it would leave live tokens
+    /// authenticating as an address the account no longer holds.
+    /// </summary>
+    [Fact]
+    public async Task ChangeEmailAsync_ShouldSwapTheAddress_AndInvalidateOutstandingTokens()
+    {
+        await using var harness = await AuthUserRepositoryHarness.CreateAsync();
+        var userId = await harness.SeedUserAsync(email: "old@example.com");
+        var now = new DateTime(2026, 9, 7, 12, 0, 0, DateTimeKind.Utc);
+
+        var result = await harness.Repository.ChangeEmailAsync(userId, "new@example.com", now);
+
+        result.Status.Should().Be(EmailChangeStatus.Changed);
+        result.PreviousEmail.Should().Be("old@example.com");
+        result.User!.Email.Should().Be("new@example.com");
+        result.User.AuthVersion.Should().Be(2);
+        result.User.UpdatedAt.Should().Be(now);
+
+        var stored = await harness.Db.Users.SingleAsync(user => user.Id == userId);
+        stored.Email.Should().Be("new@example.com");
+        stored.AuthVersion.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task ChangeEmailAsync_ShouldReportUnavailable_WhenAnotherAccountHoldsTheAddress()
+    {
+        await using var harness = await AuthUserRepositoryHarness.CreateAsync();
+        var userId = await harness.SeedUserAsync(email: "mine@example.com", username: "mine");
+        await harness.SeedUserAsync(email: "taken@example.com", username: "theirs");
+        var now = new DateTime(2026, 9, 7, 12, 0, 0, DateTimeKind.Utc);
+
+        var result = await harness.Repository.ChangeEmailAsync(userId, "taken@example.com", now);
+
+        result.Status.Should().Be(EmailChangeStatus.Unavailable);
+
+        var stored = await harness.Db.Users.SingleAsync(user => user.Id == userId);
+        stored.Email.Should().Be("mine@example.com");
+        stored.AuthVersion.Should().Be(1);
+    }
+
+    /// <summary>
+    /// The address column is citext in production, so a change that only alters casing is not a
+    /// change at all and must not burn a session for nothing.
+    /// </summary>
+    [Fact]
+    public async Task ChangeEmailAsync_ShouldReportUnchanged_ForTheSameAddressInAnotherCasing()
+    {
+        await using var harness = await AuthUserRepositoryHarness.CreateAsync();
+        var userId = await harness.SeedUserAsync(email: "same@example.com");
+        var now = new DateTime(2026, 9, 7, 12, 0, 0, DateTimeKind.Utc);
+
+        var result = await harness.Repository.ChangeEmailAsync(userId, "SAME@Example.com", now);
+
+        result.Status.Should().Be(EmailChangeStatus.Unchanged);
+
+        var stored = await harness.Db.Users.SingleAsync(user => user.Id == userId);
+        stored.Email.Should().Be("same@example.com");
+        stored.AuthVersion.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ChangeEmailAsync_ShouldReportUserNotFound_ForAnUnknownAccount()
+    {
+        await using var harness = await AuthUserRepositoryHarness.CreateAsync();
+        var now = new DateTime(2026, 9, 7, 12, 0, 0, DateTimeKind.Utc);
+
+        var result = await harness.Repository.ChangeEmailAsync(9999, "ghost@example.com", now);
+
+        result.Status.Should().Be(EmailChangeStatus.UserNotFound);
+    }
+
+    [Fact]
+    public async Task GetAuthByIdAsync_ShouldReturnCredentialsAndDisplayName()
+    {
+        await using var harness = await AuthUserRepositoryHarness.CreateAsync();
+        var userId = await harness.SeedUserAsync(email: "byid@example.com", role: "organizer");
+
+        var record = await harness.Repository.GetAuthByIdAsync(userId);
+
+        record.Should().NotBeNull();
+        record!.Email.Should().Be("byid@example.com");
+        record.Password.Should().Be("seed-password");
+        record.Usertype.Should().Be("Organizer");
+        record.Name.Should().Be("Seed User");
+    }
+
     [Fact]
     public async Task ChangeUsernameAsync_ShouldReserveOldUsername_AndResolvePublicAlias()
     {

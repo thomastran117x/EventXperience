@@ -92,6 +92,57 @@ namespace backend.main.features.auth.notifications
                 });
         }
 
+        public Task SendEmailChangeRequestedAsync(
+            string currentEmail,
+            string newEmail,
+            string? recipientName = null)
+        {
+            return _publisher.PublishAsync(
+                NotificationTopics.Email,
+                new EmailMessage
+                {
+                    Type = EmailMessageType.EmailChangeRequested,
+                    Email = currentEmail,
+                    NewEmail = newEmail,
+                    RecipientName = recipientName
+                });
+        }
+
+        public Task SendEmailChangeVerificationAsync(
+            string newEmail,
+            string token,
+            string code,
+            string? recipientName = null)
+        {
+            return _publisher.PublishAsync(
+                NotificationTopics.Email,
+                new EmailMessage
+                {
+                    Type = EmailMessageType.EmailChangeVerify,
+                    Email = newEmail,
+                    NewEmail = newEmail,
+                    Token = token,
+                    Code = code,
+                    RecipientName = recipientName
+                });
+        }
+
+        public Task SendEmailChangedAsync(
+            string email,
+            string newEmail,
+            string? recipientName = null)
+        {
+            return _publisher.PublishAsync(
+                NotificationTopics.Email,
+                new EmailMessage
+                {
+                    Type = EmailMessageType.EmailChanged,
+                    Email = email,
+                    NewEmail = newEmail,
+                    RecipientName = recipientName
+                });
+        }
+
         public Task SendDeviceVerificationAsync(
             string email,
             string token,

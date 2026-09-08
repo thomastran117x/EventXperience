@@ -26,6 +26,25 @@ namespace backend.main.features.auth.notifications
 
         Task SendPasswordChangedAsync(string email, string? recipientName = null);
 
+        /// <summary>Heads-up to the address being moved away from. Deliberately carries no link.</summary>
+        Task SendEmailChangeRequestedAsync(
+            string currentEmail,
+            string newEmail,
+            string? recipientName = null);
+
+        /// <summary>Confirmation link and code, sent to the address being moved to.</summary>
+        Task SendEmailChangeVerificationAsync(
+            string newEmail,
+            string token,
+            string code,
+            string? recipientName = null);
+
+        /// <summary>Notice that the change has been applied, sent to both addresses.</summary>
+        Task SendEmailChangedAsync(
+            string email,
+            string newEmail,
+            string? recipientName = null);
+
         Task SendDeviceVerificationAsync(
             string email,
             string token,

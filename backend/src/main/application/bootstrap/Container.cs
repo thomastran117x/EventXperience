@@ -37,6 +37,7 @@ using backend.main.features.events.versions;
 using backend.main.features.events.waitlist;
 using backend.main.features.payment;
 using backend.main.features.profile;
+using backend.main.features.profile.email;
 using backend.main.infrastructure.database.repository;
 using backend.main.infrastructure.elasticsearch;
 using backend.main.seeders;
@@ -199,6 +200,7 @@ namespace backend.main.application.bootstrap
             services.AddScoped<IAuthNotificationService, AuthNotificationService>();
 
             services.AddScoped<IUserService, UserService>();
+            services.AddScoped<IEmailChangeService, EmailChangeService>();
             services.AddScoped<IAuthService, AuthService>();
             services.AddScoped<IAuthSessionService, AuthSessionService>();
             services.AddScoped<IMfaEnrollmentService, MfaEnrollmentService>();

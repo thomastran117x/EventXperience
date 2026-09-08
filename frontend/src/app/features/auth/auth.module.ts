@@ -13,6 +13,7 @@ import { SignupComponent } from './pages/signup/signup.component';
 import { ResetPasswordComponent } from './pages/reset-password/reset-password.component';
 import { StepUpVerifyComponent } from './pages/step-up-verify/step-up-verify.component';
 import { VerifyComponent } from './pages/verify/verify.component';
+import { VerifyEmailChangeComponent } from './pages/verify-email-change/verify-email-change.component';
 
 @NgModule({
   imports: [
@@ -42,6 +43,7 @@ import { VerifyComponent } from './pages/verify/verify.component';
           }),
       },
       { path: 'verify', component: VerifyComponent },
+      { path: 'verify-email-change', component: VerifyEmailChangeComponent },
       { path: 'device/verify', component: DeviceVerifyComponent },
       { path: 'mfa', component: StepUpVerifyComponent },
       { path: 'oauth/role', component: OAuthRoleComponent },

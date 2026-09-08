@@ -39,6 +39,14 @@ namespace backend.main.features.auth.token
         public Task RevokeRefreshSessionAsync(string sessionId);
         public Task RevokeAllRefreshSessionsAsync(int userId);
         public Task<string?> VerificationTokenExist(string email, VerificationPurpose purpose);
+        public Task<VerificationArtifacts> GenerateEmailChangeArtifactsAsync(
+            int userId,
+            string newEmail
+        );
+        public Task<PendingEmailChange> ConsumeEmailChangeTokenAsync(string token);
+        public Task<PendingEmailChange> ConsumeEmailChangeOtpAsync(string code, string challenge);
+        public Task<PendingEmailChange?> GetPendingEmailChangeAsync(int userId);
+        public Task CancelPendingEmailChangeAsync(int userId);
     }
 }
 

@@ -45,6 +45,94 @@ describe('ProfileService', () => {
     httpMock.verify();
   });
 
+  describe('email change', () => {
+    it('sends the new address and current password to request a change', fakeAsync(() => {
+      let challenge: { Challenge: string; ExpiresAtUtc: string } | undefined;
+      service
+        .requestEmailChange('new@example.com', 'Password123!')
+        .subscribe((value) => (challenge = value));
+      tick();
+
+      const request = httpMock.expectOne(`${base}/email`);
+      expect(request.request.method).toBe('POST');
+      expect(request.request.withCredentials).toBeTrue();
+      expect(request.request.body).toEqual({
+        newEmail: 'new@example.com',
+        currentPassword: 'Password123!',
+      });
+      request.flush(
+        envelope({ Challenge: 'challenge-token', ExpiresAtUtc: '2026-09-07T12:30:00Z' }),
+      );
+
+      expect(challenge?.Challenge).toBe('challenge-token');
+    }));
+
+    it('omits the password for an account that has none', fakeAsync(() => {
+      service.requestEmailChange('new@example.com').subscribe();
+      tick();
+
+      const request = httpMock.expectOne(`${base}/email`);
+      expect(request.request.body.currentPassword).toBeUndefined();
+      request.flush(envelope({ Challenge: 'c', ExpiresAtUtc: '2026-09-07T12:30:00Z' }));
+    }));
+
+    it('reads the pending change', fakeAsync(() => {
+      let pending: { NewEmail: string } | null | undefined;
+      service.getPendingEmailChange().subscribe((value) => (pending = value));
+      tick();
+
+      const request = httpMock.expectOne(`${base}/email/pending`);
+      expect(request.request.method).toBe('GET');
+      request.flush(
+        envelope({ NewEmail: 'new@example.com', ExpiresAtUtc: '2026-09-07T12:30:00Z' }),
+      );
+
+      expect(pending?.NewEmail).toBe('new@example.com');
+    }));
+
+    // The endpoint answers 200 with a null payload rather than 404 when nothing is in flight.
+    it('resolves to null when no change is pending', fakeAsync(() => {
+      let pending: { NewEmail: string } | null | undefined = undefined;
+      service.getPendingEmailChange().subscribe((value) => (pending = value));
+      tick();
+
+      httpMock.expectOne(`${base}/email/pending`).flush(envelope(null));
+
+      expect(pending).toBeNull();
+    }));
+
+    it('cancels the pending change', fakeAsync(() => {
+      let completed = false;
+      service.cancelEmailChange().subscribe(() => (completed = true));
+      tick();
+
+      const request = httpMock.expectOne(`${base}/email/pending`);
+      expect(request.request.method).toBe('DELETE');
+      expect(request.request.withCredentials).toBeTrue();
+      request.flush(null);
+
+      expect(completed).toBeTrue();
+    }));
+
+    it('surfaces a conflict when the address is already taken', fakeAsync(() => {
+      let error: unknown;
+      service.requestEmailChange('taken@example.com', 'pw').subscribe({
+        error: (err) => (error = err),
+      });
+      tick();
+
+      httpMock
+        .expectOne(`${base}/email`)
+        .flush(errorEnvelope('EMAIL_TAKEN', 'That email is already in use.'), {
+          status: 409,
+          statusText: 'Conflict',
+        });
+
+      expect(error).toBeInstanceOf(ApiClientClientError);
+      expect((error as ApiClientClientError).status).toBe(409);
+    }));
+  });
+
   it('bootstraps CSRF before reading the signed-in profile', fakeAsync(() => {
     let result: MyProfile | undefined;
     service.getMyProfile().subscribe((value) => (result = value));

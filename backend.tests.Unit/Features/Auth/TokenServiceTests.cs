@@ -35,6 +35,146 @@ public class TokenServiceTests
         issue.ExpiresAtUtc.Should().BeAfter(DateTime.UtcNow.AddMinutes(10));
     }
 
+    // ------------------------------------------------------- email change
+
+    [Fact]
+    public async Task GenerateEmailChangeArtifactsAsync_ShouldBindTheArtifactsToTheAccount()
+    {
+        var service = new TokenService(new InMemoryCacheService());
+
+        var artifacts = await service.GenerateEmailChangeArtifactsAsync(23, "new@example.com");
+        var pending = await service.ConsumeEmailChangeTokenAsync(artifacts.LinkToken);
+
+        pending.UserId.Should().Be(23);
+        pending.NewEmail.Should().Be("new@example.com");
+    }
+
+    [Fact]
+    public async Task ConsumeEmailChangeOtpAsync_ShouldReturnTheAccountAndAddress()
+    {
+        var service = new TokenService(new InMemoryCacheService());
+
+        var artifacts = await service.GenerateEmailChangeArtifactsAsync(23, "new@example.com");
+        var pending = await service.ConsumeEmailChangeOtpAsync(
+            artifacts.OtpChallenge.Code,
+            artifacts.OtpChallenge.Challenge);
+
+        pending.UserId.Should().Be(23);
+        pending.NewEmail.Should().Be("new@example.com");
+    }
+
+    [Fact]
+    public async Task ConsumeEmailChangeTokenAsync_ShouldRejectAReusedToken()
+    {
+        var service = new TokenService(new InMemoryCacheService());
+        var artifacts = await service.GenerateEmailChangeArtifactsAsync(23, "new@example.com");
+
+        await service.ConsumeEmailChangeTokenAsync(artifacts.LinkToken);
+        var act = () => service.ConsumeEmailChangeTokenAsync(artifacts.LinkToken);
+
+        await act.Should().ThrowAsync<UnauthorizedException>();
+    }
+
+    /// <summary>
+    /// A signup token must not be redeemable as an email change: its payload carries no account
+    /// id, and treating one purpose as another is how a verification flow becomes a takeover.
+    /// </summary>
+    [Fact]
+    public async Task ConsumeEmailChangeTokenAsync_ShouldRejectAnotherPurposesToken()
+    {
+        var service = new TokenService(new InMemoryCacheService());
+        var user = new User { Email = "signup@example.com", Usertype = "participant" };
+        var token = await service.GenerateVerificationToken(user, VerificationPurpose.SignUp);
+
+        var act = () => service.ConsumeEmailChangeTokenAsync(token);
+
+        await act.Should().ThrowAsync<UnauthorizedException>()
+            .WithMessage("*purpose mismatch*");
+    }
+
+    [Fact]
+    public async Task GetPendingEmailChangeAsync_ShouldReportTheAddressAwaitingConfirmation()
+    {
+        var service = new TokenService(new InMemoryCacheService());
+        await service.GenerateEmailChangeArtifactsAsync(23, "new@example.com");
+
+        var pending = await service.GetPendingEmailChangeAsync(23);
+
+        pending.Should().NotBeNull();
+        pending!.NewEmail.Should().Be("new@example.com");
+    }
+
+    [Fact]
+    public async Task GetPendingEmailChangeAsync_ShouldReportNothing_AfterConfirmation()
+    {
+        var service = new TokenService(new InMemoryCacheService());
+        var artifacts = await service.GenerateEmailChangeArtifactsAsync(23, "new@example.com");
+
+        await service.ConsumeEmailChangeTokenAsync(artifacts.LinkToken);
+
+        (await service.GetPendingEmailChangeAsync(23)).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task CancelPendingEmailChangeAsync_ShouldMakeTheLinkUnusable()
+    {
+        var service = new TokenService(new InMemoryCacheService());
+        var artifacts = await service.GenerateEmailChangeArtifactsAsync(23, "new@example.com");
+
+        await service.CancelPendingEmailChangeAsync(23);
+
+        (await service.GetPendingEmailChangeAsync(23)).Should().BeNull();
+        var act = () => service.ConsumeEmailChangeTokenAsync(artifacts.LinkToken);
+        await act.Should().ThrowAsync<UnauthorizedException>();
+    }
+
+    /// <summary>
+    /// State is keyed by the target address, so re-requesting against a different one would strand
+    /// the first request's artifacts as separately redeemable without an explicit cancel.
+    /// </summary>
+    [Fact]
+    public async Task GenerateEmailChangeArtifactsAsync_ShouldInvalidateAnEarlierRequest()
+    {
+        var service = new TokenService(new InMemoryCacheService());
+        var first = await service.GenerateEmailChangeArtifactsAsync(23, "first@example.com");
+
+        await service.GenerateEmailChangeArtifactsAsync(23, "second@example.com");
+
+        var act = () => service.ConsumeEmailChangeTokenAsync(first.LinkToken);
+        await act.Should().ThrowAsync<UnauthorizedException>();
+
+        (await service.GetPendingEmailChangeAsync(23))!.NewEmail.Should().Be("second@example.com");
+    }
+
+    /// <summary>
+    /// The account id is appended to the OTP proof only when present, so proofs already issued for
+    /// signup and reset hash identically across the deploy that added it. This pins that the two
+    /// purposes without an id still verify.
+    /// </summary>
+    [Fact]
+    public async Task VerifyVerificationOtpAsync_ShouldStillAcceptSignupProofs()
+    {
+        var service = new TokenService(new InMemoryCacheService());
+        var user = new User
+        {
+            Email = "signup@example.com",
+            Password = "hashed",
+            Username = "ada",
+            Usertype = "participant"
+        };
+
+        var artifacts = await service.GenerateVerificationArtifactsAsync(
+            user,
+            VerificationPurpose.SignUp);
+        var verified = await service.VerifyVerificationOtpAsync(
+            artifacts.OtpChallenge.Code,
+            artifacts.OtpChallenge.Challenge,
+            VerificationPurpose.SignUp);
+
+        verified.Email.Should().Be("signup@example.com");
+        verified.Username.Should().Be("ada");
+    }
+
     [Fact]
     public async Task ValidateRefreshToken_ShouldRejectTransportMismatch()
     {

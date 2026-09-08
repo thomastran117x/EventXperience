@@ -58,6 +58,7 @@ public sealed class DisabledEventInvitationService : IEventInvitationService
     public Task<EventInvitationDecisionResponse> AcceptInvitationByIdAsync(int invitationId, int userId, string userEmail) => Task.FromException<EventInvitationDecisionResponse>(DisabledFeatureErrors.Create(FeatureFlagKeys.EventsInvitations));
     public Task<EventInvitationDecisionResponse> DeclineInvitationByIdAsync(int invitationId, int userId, string userEmail) => Task.FromException<EventInvitationDecisionResponse>(DisabledFeatureErrors.Create(FeatureFlagKeys.EventsInvitations));
     public Task<IReadOnlyList<EventInvitationResponse>> GetMyInvitationsAsync(int userId, string userEmail) => Task.FromException<IReadOnlyList<EventInvitationResponse>>(DisabledFeatureErrors.Create(FeatureFlagKeys.EventsInvitations));
+    public Task RelinkForEmailChangeAsync(int userId, string previousNormalizedEmail, string newNormalizedEmail) => Task.CompletedTask;
     public Task MarkInvitationDeliveryStatusAsync(int invitationId, EventInvitationDeliveryStatus status, string? errorMessage) => Task.FromException(DisabledFeatureErrors.Create(FeatureFlagKeys.EventsInvitations));
 }
 

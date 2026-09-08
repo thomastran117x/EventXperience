@@ -1,0 +1,38 @@
+<div class="verify-shell">
+  <div class="verify-card">
+    <p class="verify-eyebrow">Email Change</p>
+    <h1>Confirm your new email address</h1>
+    <p class="verify-copy">{{ message() }}</p>
+
+    @if (status() === 'loading') {
+      <div class="verify-spinner" aria-hidden="true"></div>
+    }
+
+    @if (status() === 'ready') {
+      <p class="verify-copy">
+        Confirming will sign you out on every device. You will sign back in with this address.
+      </p>
+      <div class="verify-actions">
+        <button type="button" class="verify-primary" (click)="confirm()" [disabled]="!hasToken">
+          Confirm email change
+        </button>
+        <a routerLink="/auth/login" class="verify-secondary">Back to login</a>
+      </div>
+    }
+
+    @if (status() === 'success') {
+      <div class="verify-actions">
+        <a routerLink="/auth/login" class="verify-primary">Go to sign in</a>
+      </div>
+    }
+
+    @if (status() === 'error') {
+      <div class="verify-actions">
+        <button type="button" class="verify-primary" (click)="confirm()" [disabled]="!hasToken">
+          Try Again
+        </button>
+        <a routerLink="/auth/login" class="verify-secondary">Back to login</a>
+      </div>
+    }
+  </div>
+</div>

@@ -6,6 +6,7 @@ using backend.main.features.auth.contracts.responses;
 using backend.main.features.auth.oauth;
 using backend.main.features.auth.token;
 using backend.main.features.profile;
+using backend.main.features.profile.email;
 using backend.main.shared.requests;
 using backend.main.shared.responses;
 
@@ -728,7 +729,9 @@ public class AuthControllerTests
             captchaService.Object,
             new SeedAccountBypassPolicy(configuration),
             TestRequestInfoFactory.Browser(),
-            configuration);
+            configuration,
+            new Mock<ITokenService>().Object,
+            new Mock<IEmailChangeService>().Object);
 
         controller.ControllerContext = new ControllerContext
         {
