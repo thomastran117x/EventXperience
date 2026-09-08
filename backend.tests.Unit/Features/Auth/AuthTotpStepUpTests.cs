@@ -10,6 +10,7 @@ using backend.main.features.auth.notifications;
 using backend.main.features.auth.oauth;
 using backend.main.features.auth.stepup;
 using backend.main.features.auth.token;
+using backend.main.features.profile.email;
 using backend.main.features.cache;
 using backend.main.shared.requests;
 using backend.main.shared.responses;
@@ -82,7 +83,9 @@ public class AuthTotpStepUpControllerTests
             captchaService.Object,
             new SeedAccountBypassPolicy(configuration),
             TestRequestInfoFactory.Browser(),
-            configuration)
+            configuration,
+            new Mock<ITokenService>().Object,
+            new Mock<IEmailChangeService>().Object)
         {
             ControllerContext = new ControllerContext
             {

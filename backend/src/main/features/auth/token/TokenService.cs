@@ -35,6 +35,8 @@ namespace backend.main.features.auth.token
         private readonly TimeSpan REMEMBERED_REFRESH_TTL = TimeSpan.FromDays(30);
         private readonly TimeSpan VERIFY_TTL = TimeSpan.FromMinutes(30);
         private const int MAX_OTP_ATTEMPTS = 5;
+        private const string PlaceholderUsertype = "placeholder";
+        private static readonly TimeSpan EmailChangeLockTtl = TimeSpan.FromSeconds(10);
 
         public TokenService(ICacheService cacheService)
         {
@@ -372,7 +374,8 @@ namespace backend.main.features.auth.token
                     payload.Username,
                     expiresAtUtc,
                     challenge,
-                    otpCode
+                    otpCode,
+                    payload.UserId
                 );
 
                 var linkStored = await _cacheService.SetValueAsync(
@@ -384,6 +387,8 @@ namespace backend.main.features.auth.token
                 var state = new VerificationDeliveryState
                 {
                     Email = user.Email,
+                    UserId = payload.UserId,
+                    AuthVersion = payload.AuthVersion,
                     Purpose = purpose,
                     LinkToken = linkToken,
                     OtpCode = otpCode,
@@ -493,7 +498,8 @@ namespace backend.main.features.auth.token
                     state.Username,
                     state.ExpiresAtUtc,
                     challenge,
-                    code
+                    code,
+                    state.UserId
                 );
 
                 if (state.OtpChallenge != challenge)
@@ -518,6 +524,8 @@ namespace backend.main.features.auth.token
                 return CreateUserFromPayload(new VerificationTokenPayload
                 {
                     Email = state.Email,
+                    UserId = state.UserId,
+                    AuthVersion = state.AuthVersion,
                     Password = state.Password,
                     Usertype = state.Usertype,
                     Username = state.Username,
@@ -547,6 +555,293 @@ namespace backend.main.features.auth.token
                     throw;
 
                 Logger.Error($"[TokenService] VerificationTokenExist failed: {e}");
+                throw new InternalServerErrorException();
+            }
+        }
+
+        /// <summary>
+        /// Issues the link token and OTP for an email change. Unlike signup and reset, the state
+        /// is keyed by an address the account does not own yet, so the artifacts are also indexed
+        /// by account id - see <c>EmailChangeIndexKey</c>.
+        /// </summary>
+        public async Task<VerificationArtifacts> GenerateEmailChangeArtifactsAsync(
+            int userId,
+            int authVersion,
+            string newEmail
+        )
+        {
+            // Cancel, generate and index have to happen as one unit, and consumption has to take
+            // the same lock. Each pending change is stored under its own target address, so
+            // without this two concurrent requests both clear the same (empty) index and both mint
+            // a redeemable token, and a consumption racing a generation deletes the index the
+            // generation just wrote - in both cases leaving a live proof that neither the pending
+            // endpoint nor a later cancel can reach.
+            return await WithEmailChangeLockAsync(userId, async () =>
+            {
+                await CancelPendingEmailChangeCoreAsync(userId);
+
+                var artifacts = await GenerateVerificationArtifactsAsync(
+                    new User
+                    {
+                        Id = userId,
+                        AuthVersion = authVersion,
+                        Email = newEmail,
+                        Usertype = PlaceholderUsertype,
+                    },
+                    VerificationPurpose.ChangeEmail,
+                    replaceExisting: true
+                );
+
+                var indexed = await _cacheService.SetValueAsync(
+                    key: EmailChangeIndexKey(userId),
+                    value: newEmail,
+                    expiry: VERIFY_TTL
+                );
+
+                if (!indexed)
+                    throw new NotAvailableException();
+
+                return artifacts;
+            });
+        }
+
+        public async Task<PendingEmailChange> ConsumeEmailChangeTokenAsync(string token)
+        {
+            try
+            {
+                // Read the payload first, only to learn whose lock to take.
+                string? peek = await _cacheService.GetValueAsync(VerificationTokenKey(token));
+                if (string.IsNullOrEmpty(peek))
+                    throw new UnauthorizedException("Invalid or expired email change link.");
+
+                var peeked = JsonConvert.DeserializeObject<VerificationTokenPayload>(peek)
+                    ?? throw new UnauthorizedException("Invalid verification token payload.");
+
+                // Checked before the account id so a token for another purpose is reported as
+                // such, rather than as one missing a binding it was never meant to carry.
+                if (peeked.Purpose != VerificationPurpose.ChangeEmail)
+                    throw new UnauthorizedException("Verification token purpose mismatch.");
+
+                if (peeked.UserId is not int owner)
+                    throw new UnauthorizedException("Email change token is missing its account.");
+
+                return await WithEmailChangeLockAsync(owner, () => ConsumeTokenCoreAsync(token));
+            }
+            catch (Exception e)
+            {
+                if (e is AppException)
+                    throw;
+
+                Logger.Error($"[TokenService] ConsumeEmailChangeTokenAsync failed: {e}");
+                throw new InternalServerErrorException();
+            }
+        }
+
+        private async Task<PendingEmailChange> ConsumeTokenCoreAsync(string token)
+        {
+            try
+            {
+                string? json = await _cacheService.GetValueAsync(VerificationTokenKey(token));
+
+                if (string.IsNullOrEmpty(json))
+                    throw new UnauthorizedException("Invalid or expired email change link.");
+
+                var payload = JsonConvert.DeserializeObject<VerificationTokenPayload>(json)
+                    ?? throw new UnauthorizedException("Invalid verification token payload.");
+
+                if (payload.Purpose != VerificationPurpose.ChangeEmail)
+                    throw new UnauthorizedException("Verification token purpose mismatch.");
+
+                if (payload.UserId is not int userId)
+                    throw new UnauthorizedException("Email change token is missing its account.");
+
+                if (payload.AuthVersion is not int authVersion)
+                    throw new UnauthorizedException("Email change token is missing its account.");
+
+                var state = await GetVerificationStateAsync(payload.Email, payload.Purpose);
+                var expiresAtUtc = state?.ExpiresAtUtc ?? DateTime.UtcNow;
+
+                _ = await _cacheService.DeleteKeyAsync(VerificationTokenKey(token));
+                if (state != null)
+                    await DeleteVerificationStateAsync(state);
+                else
+                    _ = await _cacheService.DeleteKeyAsync(
+                        VerificationStateKey(payload.Email, payload.Purpose)
+                    );
+
+                _ = await _cacheService.DeleteKeyAsync(EmailChangeIndexKey(userId));
+
+                return new PendingEmailChange(userId, authVersion, payload.Email, expiresAtUtc);
+            }
+            catch (Exception e)
+            {
+                if (e is AppException)
+                    throw;
+
+                Logger.Error($"[TokenService] ConsumeTokenCoreAsync failed: {e}");
+                throw new InternalServerErrorException();
+            }
+        }
+
+        public async Task<PendingEmailChange> ConsumeEmailChangeOtpAsync(
+            string code,
+            string challenge
+        )
+        {
+            try
+            {
+                var peek = await GetVerificationStateByChallengeAsync(challenge)
+                    ?? throw new UnauthorizedException("Invalid or expired verification challenge.");
+
+                if (peek.Purpose != VerificationPurpose.ChangeEmail)
+                    throw new UnauthorizedException("Verification challenge purpose mismatch.");
+
+                if (peek.UserId is not int owner)
+                    throw new UnauthorizedException("Email change challenge is missing its account.");
+
+                return await WithEmailChangeLockAsync(
+                    owner,
+                    () => ConsumeOtpCoreAsync(code, challenge));
+            }
+            catch (Exception e)
+            {
+                if (e is AppException)
+                    throw;
+
+                Logger.Error($"[TokenService] ConsumeEmailChangeOtpAsync failed: {e}");
+                throw new InternalServerErrorException();
+            }
+        }
+
+        private async Task<PendingEmailChange> ConsumeOtpCoreAsync(string code, string challenge)
+        {
+            try
+            {
+                var state = await GetVerificationStateByChallengeAsync(challenge);
+                if (state == null)
+                    throw new UnauthorizedException("Invalid or expired verification challenge.");
+
+                if (state.Purpose != VerificationPurpose.ChangeEmail)
+                    throw new UnauthorizedException("Verification challenge purpose mismatch.");
+
+                if (state.UserId is not int userId)
+                    throw new UnauthorizedException("Email change challenge is missing its account.");
+
+                if (state.AuthVersion is not int authVersion)
+                    throw new UnauthorizedException("Email change challenge is missing its account.");
+
+                if (state.OtpChallenge != challenge)
+                    throw new UnauthorizedException("Invalid or expired verification challenge.");
+
+                var expectedProof = ComputeOtpProof(
+                    state.Purpose,
+                    state.Email,
+                    state.Password,
+                    state.Usertype,
+                    state.Username,
+                    state.ExpiresAtUtc,
+                    challenge,
+                    code,
+                    state.UserId
+                );
+
+                if (!CryptoHelper.FixedTimeEquals(state.OtpProof, expectedProof))
+                {
+                    var attempts = await RecordFailedOtpAttemptAsync(challenge);
+                    if (attempts >= MAX_OTP_ATTEMPTS)
+                    {
+                        _ = await _cacheService.DeleteKeyAsync(VerificationTokenKey(state.LinkToken));
+                        await DeleteVerificationStateAsync(state);
+                        _ = await _cacheService.DeleteKeyAsync(EmailChangeIndexKey(userId));
+                    }
+
+                    throw new UnauthorizedException("Invalid or expired verification code.");
+                }
+
+                _ = await _cacheService.DeleteKeyAsync(VerificationTokenKey(state.LinkToken));
+                await DeleteVerificationStateAsync(state);
+                _ = await _cacheService.DeleteKeyAsync(OtpAttemptKey(challenge));
+                _ = await _cacheService.DeleteKeyAsync(EmailChangeIndexKey(userId));
+
+                return new PendingEmailChange(userId, authVersion, state.Email, state.ExpiresAtUtc);
+            }
+            catch (Exception e)
+            {
+                if (e is AppException)
+                    throw;
+
+                Logger.Error($"[TokenService] ConsumeOtpCoreAsync failed: {e}");
+                throw new InternalServerErrorException();
+            }
+        }
+
+        public async Task<PendingEmailChange?> GetPendingEmailChangeAsync(int userId)
+        {
+            try
+            {
+                var email = await _cacheService.GetValueAsync(EmailChangeIndexKey(userId));
+                if (string.IsNullOrWhiteSpace(email))
+                    return null;
+
+                var state = await GetVerificationStateAsync(email, VerificationPurpose.ChangeEmail);
+
+                // The index can outlive the state it points at: the state is deleted on redemption
+                // and after too many failed OTP attempts, and both keys expire independently.
+                if (state == null || state.UserId != userId || state.AuthVersion is not int version)
+                {
+                    _ = await _cacheService.DeleteKeyAsync(EmailChangeIndexKey(userId));
+                    return null;
+                }
+
+                return new PendingEmailChange(userId, version, state.Email, state.ExpiresAtUtc);
+            }
+            catch (Exception e)
+            {
+                if (e is AppException)
+                    throw;
+
+                Logger.Error($"[TokenService] GetPendingEmailChangeAsync failed: {e}");
+                throw new InternalServerErrorException();
+            }
+        }
+
+        public Task CancelPendingEmailChangeAsync(int userId) =>
+            WithEmailChangeLockAsync<object?>(userId, async () =>
+            {
+                await CancelPendingEmailChangeCoreAsync(userId);
+                return null;
+            });
+
+        private async Task CancelPendingEmailChangeCoreAsync(int userId)
+        {
+            try
+            {
+                var email = await _cacheService.GetValueAsync(EmailChangeIndexKey(userId));
+
+                if (!string.IsNullOrWhiteSpace(email))
+                {
+                    var state = await GetVerificationStateAsync(
+                        email,
+                        VerificationPurpose.ChangeEmail
+                    );
+
+                    if (state != null && state.UserId == userId)
+                    {
+                        _ = await _cacheService.DeleteKeyAsync(
+                            VerificationTokenKey(state.LinkToken)
+                        );
+                        await DeleteVerificationStateAsync(state);
+                    }
+                }
+
+                _ = await _cacheService.DeleteKeyAsync(EmailChangeIndexKey(userId));
+            }
+            catch (Exception e)
+            {
+                if (e is AppException)
+                    throw;
+
+                Logger.Error($"[TokenService] CancelPendingEmailChangeCoreAsync failed: {e}");
                 throw new InternalServerErrorException();
             }
         }
@@ -620,11 +915,15 @@ namespace backend.main.features.auth.token
             return new VerificationTokenPayload
             {
                 Email = user.Email,
+                // Signup builds an in-memory user that has never been inserted, so its Id is 0.
+                // Only an email change supplies a real account id here.
+                UserId = user.Id > 0 ? user.Id : null,
+                AuthVersion = user.Id > 0 ? user.AuthVersion : null,
                 Password = purpose == VerificationPurpose.SignUp ? user.Password : null,
                 Username = purpose == VerificationPurpose.SignUp ? user.Username : null,
                 Usertype = purpose == VerificationPurpose.SignUp
                     ? AuthRoles.NormalizeStored(user.Usertype)
-                    : "placeholder",
+                    : PlaceholderUsertype,
                 Purpose = purpose,
             };
         }
@@ -680,7 +979,8 @@ namespace backend.main.features.auth.token
             string? username,
             DateTime expiresAtUtc,
             string challenge,
-            string otpCode
+            string otpCode,
+            int? userId = null
         )
         {
             var fields = new List<object?>
@@ -695,6 +995,10 @@ namespace backend.main.features.auth.token
             fields.Add(expiresAtUtc.ToUniversalTime().Ticks);
             fields.Add(challenge);
             fields.Add(otpCode);
+            // Appended last and only when present, so proofs already issued for the signup and
+            // reset purposes hash to the same value across the deploy that adds this.
+            if (userId.HasValue)
+                fields.Add(userId.Value);
 
             var material = string.Join("|", fields);
 
@@ -732,6 +1036,35 @@ namespace backend.main.features.auth.token
 
         private static string OtpAttemptKey(string challenge) =>
             $"verify:otp-attempt:{challenge}";
+
+        // Reverse index from account to pending target address. The verification state itself is
+        // keyed by the NEW email, which nothing knows until the change is confirmed, so without
+        // this a user could neither be shown their pending change nor cancel it — and a second
+        // request to a different address would strand the first one until its TTL ran out.
+        private static string EmailChangeIndexKey(int userId) =>
+            $"verify:user-email-change:{userId}";
+
+        private async Task<T> WithEmailChangeLockAsync<T>(int userId, Func<Task<T>> action)
+        {
+            var lockValue = Convert.ToBase64String(RandomNumberGenerator.GetBytes(16));
+            var lockKey = EmailChangeLockKey(userId);
+            if (!await _cacheService.AcquireLockAsync(lockKey, lockValue, EmailChangeLockTtl))
+                throw new ConflictException(
+                    "Another email change request is already being processed."
+                );
+
+            try
+            {
+                return await action();
+            }
+            finally
+            {
+                await _cacheService.ReleaseLockAsync(lockKey, lockValue);
+            }
+        }
+
+        private static string EmailChangeLockKey(int userId) =>
+            $"verify:user-email-change-lock:{userId}";
 
         private sealed class RefreshTokenRecord
         {
@@ -794,6 +1127,19 @@ namespace backend.main.features.auth.token
             {
                 get; set;
             }
+            /// <summary>
+            /// Set only for <see cref="VerificationPurpose.ChangeEmail"/>, where the account
+            /// already exists. Null for signup and reset, whose payloads describe a user that is
+            /// either not yet persisted or identified by email alone.
+            /// </summary>
+            public int? UserId
+            {
+                get; set;
+            }
+            public int? AuthVersion
+            {
+                get; set;
+            }
             public string? Password
             {
                 get; set;
@@ -815,6 +1161,14 @@ namespace backend.main.features.auth.token
         private sealed class VerificationDeliveryState
         {
             public required string Email
+            {
+                get; set;
+            }
+            public int? UserId
+            {
+                get; set;
+            }
+            public int? AuthVersion
             {
                 get; set;
             }

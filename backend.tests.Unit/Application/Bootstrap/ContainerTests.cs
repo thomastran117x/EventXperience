@@ -5,6 +5,7 @@ using backend.main.application.features;
 using backend.main.features.auth;
 using backend.main.features.auth.captcha;
 using backend.main.features.bloom;
+using backend.main.features.profile.email;
 using backend.main.features.cache;
 using backend.main.features.clubs.follow;
 using backend.main.features.clubs.follow.invitations;
@@ -64,6 +65,9 @@ public class ContainerTests
         services.Should().Contain(descriptor =>
             descriptor.ServiceType == typeof(IEmailAvailabilityService)
             && descriptor.ImplementationType == typeof(EmailAvailabilityService));
+        services.Should().Contain(descriptor =>
+            descriptor.ServiceType == typeof(IEmailChangeService)
+            && descriptor.ImplementationType == typeof(EmailChangeService));
     }
 
     /// <summary>

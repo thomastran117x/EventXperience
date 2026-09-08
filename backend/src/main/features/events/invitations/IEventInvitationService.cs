@@ -28,5 +28,13 @@ public interface IEventInvitationService
     Task<EventInvitationDecisionResponse> AcceptInvitationByIdAsync(int invitationId, int userId, string userEmail);
     Task<EventInvitationDecisionResponse> DeclineInvitationByIdAsync(int invitationId, int userId, string userEmail);
     Task<IReadOnlyList<EventInvitationResponse>> GetMyInvitationsAsync(int userId, string userEmail);
+    /// <summary>
+    /// Claims unclaimed invitations addressed to either side of an email change and drops the
+    /// per-address cache entries. Invitations are matched by <c>RecipientEmailNormalized</c> when
+    /// they have no recipient id yet, so without this an account would lose sight of every
+    /// invitation sent to the address it just moved away from.
+    /// </summary>
+    Task RelinkForEmailChangeAsync(int userId, string previousNormalizedEmail, string newNormalizedEmail);
+
     Task MarkInvitationDeliveryStatusAsync(int invitationId, EventInvitationDeliveryStatus status, string? errorMessage);
 }

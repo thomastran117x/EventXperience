@@ -12,6 +12,10 @@ namespace backend.main.features.auth.contracts
             get; init;
         }
         public string Usertype { get; init; } = null!;
+        public string? Name
+        {
+            get; init;
+        }
         public bool IsDisabled
         {
             get; init;

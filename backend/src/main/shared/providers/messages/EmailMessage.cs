@@ -26,6 +26,11 @@ namespace backend.main.shared.providers.messages
         {
             get; init;
         }
+        /// <summary>The address an email change is moving to. Set for the EmailChange* types.</summary>
+        public string? NewEmail
+        {
+            get; init;
+        }
         public IReadOnlyList<string>? SignInProviders
         {
             get; init;

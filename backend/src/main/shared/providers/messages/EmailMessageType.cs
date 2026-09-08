@@ -1,5 +1,9 @@
 namespace backend.main.shared.providers.messages
 {
+    /// <summary>
+    /// Serialized onto the notification topic by ordinal, so values may only ever be
+    /// appended and the email worker must be deployed no later than the producer.
+    /// </summary>
     public enum EmailMessageType
     {
         VerifyEmail,
@@ -18,6 +22,9 @@ namespace backend.main.shared.providers.messages
         WaitlistJoined,
         WaitlistPromoted,
         UsernameReminder,
-        ProviderSignInReminder
+        ProviderSignInReminder,
+        EmailChangeRequested,
+        EmailChangeVerify,
+        EmailChanged
     }
 }

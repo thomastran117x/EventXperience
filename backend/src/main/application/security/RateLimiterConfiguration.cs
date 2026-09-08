@@ -39,6 +39,17 @@ namespace backend.main.application.security
         private const int EmailAvailabilityPermitLimit = 15;
         private static readonly TimeSpan EmailAvailabilityWindow = TimeSpan.FromMinutes(1);
 
+        /// <summary>
+        /// Policy for requesting an email change. Unlike the availability probes, which only ever
+        /// answer a question, this endpoint sends mail to an address the caller chose, which makes
+        /// it a way to have EventXperience deliver unsolicited mail to a third party. The budget is
+        /// therefore sized for a person correcting a typo, not for a form being filled in, and is
+        /// partitioned per account rather than per IP so it cannot be widened by changing network.
+        /// </summary>
+        public const string EmailChangePolicyName = "email-change";
+        private const int EmailChangePermitLimit = 3;
+        private static readonly TimeSpan EmailChangeWindow = TimeSpan.FromHours(1);
+
         public static IServiceCollection AddInMemoryRateLimiter(
             this IServiceCollection services,
             IConfiguration? configuration = null)
@@ -53,6 +64,9 @@ namespace backend.main.application.security
             var emailAvailabilityPermitLimit =
                 configuration?.GetValue<int?>("RateLimiter:EmailAvailabilityPermitLimit")
                 ?? EmailAvailabilityPermitLimit;
+            var emailChangePermitLimit =
+                configuration?.GetValue<int?>("RateLimiter:EmailChangePermitLimit")
+                ?? EmailChangePermitLimit;
 
             services.AddRateLimiter(options =>
             {
@@ -130,6 +144,19 @@ namespace backend.main.application.security
                         {
                             PermitLimit = emailAvailabilityPermitLimit,
                             Window = EmailAvailabilityWindow,
+                            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                            QueueLimit = 0
+                        });
+                });
+
+                options.AddPolicy(EmailChangePolicyName, context =>
+                {
+                    return RateLimitPartition.GetFixedWindowLimiter(
+                        $"email-change:{GetPartitionKey(context)}",
+                        _ => new FixedWindowRateLimiterOptions
+                        {
+                            PermitLimit = emailChangePermitLimit,
+                            Window = EmailChangeWindow,
                             QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
                             QueueLimit = 0
                         });

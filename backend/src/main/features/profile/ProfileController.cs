@@ -1,9 +1,11 @@
 using backend.main.application.features;
 using backend.main.application.security;
 using backend.main.features.auth;
+using backend.main.features.auth.contracts.responses;
 using backend.main.features.auth.token;
 using backend.main.features.profile.contracts.requests;
 using backend.main.features.profile.contracts.responses;
+using backend.main.features.profile.email;
 using backend.main.shared.exceptions.http;
 using backend.main.shared.responses;
 using backend.main.shared.utilities.logger;
@@ -11,6 +13,7 @@ using backend.main.utilities;
 
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace backend.main.features.profile
 {
@@ -23,18 +26,21 @@ namespace backend.main.features.profile
         private readonly IUserService _userService;
         private readonly IAuthService _authService;
         private readonly ITokenService _tokenService;
+        private readonly IEmailChangeService _emailChangeService;
         private readonly TimeProvider _timeProvider;
 
         public ProfileController(
             IUserService userService,
             IAuthService authService,
             ITokenService tokenService,
+            IEmailChangeService emailChangeService,
             TimeProvider timeProvider
         )
         {
             _userService = userService;
             _authService = authService;
             _tokenService = tokenService;
+            _emailChangeService = emailChangeService;
             _timeProvider = timeProvider;
         }
 
@@ -221,6 +227,96 @@ namespace backend.main.features.profile
             }
         }
 
+        [HttpPost("email")]
+        [RequireMfa]
+        [EnableRateLimiting(RateLimiterConfiguration.EmailChangePolicyName)]
+        [ProducesResponseType(typeof(ApiResponse<VerificationChallengeResponse>), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<object?>), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(ApiResponse<object?>), StatusCodes.Status409Conflict)]
+        public async Task<IActionResult> RequestEmailChange([FromBody] ChangeEmailRequest request)
+        {
+            try
+            {
+                var userPayload = User.GetUserPayload();
+                var challenge = await _emailChangeService.RequestChangeAsync(
+                    userPayload.Id,
+                    request.NewEmail,
+                    request.CurrentPassword,
+                    HttpContext.RequestAborted
+                );
+
+                return Ok(new ApiResponse<VerificationChallengeResponse>(
+                    "Check your new email address for a confirmation link and code.",
+                    new VerificationChallengeResponse
+                    {
+                        Challenge = challenge.Challenge,
+                        ExpiresAtUtc = challenge.ExpiresAtUtc,
+                    }
+                ));
+            }
+            catch (Exception e)
+            {
+                if (e is AppException)
+                    return HandleError.Resolve(e);
+
+                Logger.Error($"[ProfileController] RequestEmailChange failed: {e}");
+                return HandleError.Resolve(e);
+            }
+        }
+
+        [HttpGet("email/pending")]
+        [ProducesResponseType(typeof(ApiResponse<PendingEmailChangeResponse?>), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetPendingEmailChange()
+        {
+            try
+            {
+                var userPayload = User.GetUserPayload();
+                var pending = await _emailChangeService.GetPendingAsync(userPayload.Id);
+
+                return Ok(new ApiResponse<PendingEmailChangeResponse?>(
+                    pending == null
+                        ? "No email change is pending."
+                        : "Pending email change fetched successfully.",
+                    pending == null
+                        ? null
+                        : new PendingEmailChangeResponse
+                        {
+                            NewEmail = pending.NewEmail,
+                            ExpiresAtUtc = pending.ExpiresAtUtc,
+                        }
+                ));
+            }
+            catch (Exception e)
+            {
+                if (e is AppException)
+                    return HandleError.Resolve(e);
+
+                Logger.Error($"[ProfileController] GetPendingEmailChange failed: {e}");
+                return HandleError.Resolve(e);
+            }
+        }
+
+        [HttpDelete("email/pending")]
+        [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status200OK)]
+        public async Task<IActionResult> CancelPendingEmailChange()
+        {
+            try
+            {
+                var userPayload = User.GetUserPayload();
+                await _emailChangeService.CancelPendingAsync(userPayload.Id);
+
+                return Ok(new MessageResponse("Email change cancelled."));
+            }
+            catch (Exception e)
+            {
+                if (e is AppException)
+                    return HandleError.Resolve(e);
+
+                Logger.Error($"[ProfileController] CancelPendingEmailChange failed: {e}");
+                return HandleError.Resolve(e);
+            }
+        }
+
         [HttpDelete]
         [RequireMfa]
         [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status200OK)]
@@ -263,6 +359,7 @@ namespace backend.main.features.profile
                 Usertype = user.Usertype,
                 Phone = user.Phone,
                 Address = user.Address,
+                HasLocalPassword = user.HasLocalPassword,
                 GoogleLinked = !string.IsNullOrEmpty(user.GoogleID),
                 MicrosoftLinked = !string.IsNullOrEmpty(user.MicrosoftID),
                 CreatedAtUtc = user.CreatedAt,

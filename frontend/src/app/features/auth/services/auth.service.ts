@@ -261,6 +261,19 @@ export class AuthService {
     );
   }
 
+  /**
+   * Applies a pending email change. Takes either proof: the token from the emailed link, or the
+   * code and challenge from the page that requested it. Returns no session - confirming signs
+   * every session out, so the caller drops local auth state and sends the user to sign in.
+   */
+  confirmEmailChange(
+    payload: { token: string } | { code: string; challenge: string },
+  ): Observable<void> {
+    return this.postWithCsrf<void>(`${this.baseUrl}/verify/email-change`, payload).pipe(
+      map(() => undefined),
+    );
+  }
+
   verifyDevice(token: string): Observable<AuthenticatedSessionResponse> {
     return this.api
       .post<ApiEnvelope<AuthenticatedSessionResponse>>(

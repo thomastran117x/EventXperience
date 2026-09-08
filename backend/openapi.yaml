@@ -383,6 +383,170 @@ paths:
                 $ref: '#/components/schemas/ApiResponseOfObject'
       security:
         - { }
+  /api/profile/email:
+    post:
+      tags:
+        - profile
+      summary: Request email change
+      operationId: Profile_RequestEmailChange_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangeEmailRequest'
+          text/json:
+            schema:
+              $ref: '#/components/schemas/ChangeEmailRequest'
+          application/*+json:
+            schema:
+              $ref: '#/components/schemas/ChangeEmailRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            text/plain:
+              schema:
+                $ref: '#/components/schemas/ApiResponseOfVerificationChallengeResponse'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseOfVerificationChallengeResponse'
+            text/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseOfVerificationChallengeResponse'
+        '400':
+          description: Bad Request
+          content:
+            text/plain:
+              schema:
+                $ref: '#/components/schemas/ApiResponseOfObject'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseOfObject'
+            text/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseOfObject'
+        '409':
+          description: Conflict
+          content:
+            text/plain:
+              schema:
+                $ref: '#/components/schemas/ApiResponseOfObject'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseOfObject'
+            text/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseOfObject'
+        '500':
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseOfObject'
+        '401':
+          description: Authentication is required or the access token is invalid/expired.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseOfObject'
+        '403':
+          description: The authenticated user does not have permission to perform this action.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseOfObject'
+      security:
+        - { }
+  /api/profile/email/pending:
+    get:
+      tags:
+        - profile
+      summary: Get pending email change
+      operationId: Profile_GetPendingEmailChange_get
+      responses:
+        '200':
+          description: OK
+          content:
+            text/plain:
+              schema:
+                $ref: '#/components/schemas/ApiResponseOfPendingEmailChangeResponse'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseOfPendingEmailChangeResponse'
+            text/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseOfPendingEmailChangeResponse'
+        '400':
+          description: 'Bad request, validation failure, or CSRF failure.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseOfObject'
+        '500':
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseOfObject'
+        '401':
+          description: Authentication is required or the access token is invalid/expired.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseOfObject'
+        '403':
+          description: The authenticated user does not have permission to perform this action.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseOfObject'
+      security:
+        - { }
+    delete:
+      tags:
+        - profile
+      summary: Cancel pending email change
+      operationId: Profile_CancelPendingEmailChange_delete
+      responses:
+        '200':
+          description: OK
+          content:
+            text/plain:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+            text/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '400':
+          description: 'Bad request, validation failure, or CSRF failure.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseOfObject'
+        '500':
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseOfObject'
+        '401':
+          description: Authentication is required or the access token is invalid/expired.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseOfObject'
+        '403':
+          description: The authenticated user does not have permission to perform this action.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseOfObject'
+      security:
+        - { }
   '/api/admin/users/{id}/status':
     patch:
       tags:
@@ -8682,6 +8846,116 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiResponseOfObject'
+  /api/auth/verify/email-change:
+    get:
+      tags:
+        - auth
+      summary: Verify email change
+      operationId: Auth_VerifyEmailChange_get
+      parameters:
+        - name: token
+          in: query
+          schema:
+            $ref: '#/components/schemas/String'
+      responses:
+        '200':
+          description: OK
+          content:
+            text/plain:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+            text/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '302':
+          description: Found
+        '400':
+          description: 'Bad request, validation failure, or CSRF failure.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseOfObject'
+        '500':
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseOfObject'
+    post:
+      tags:
+        - auth
+      summary: Verify email change
+      operationId: Auth_VerifyEmailChange_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailChangeConfirmationRequest'
+          text/json:
+            schema:
+              $ref: '#/components/schemas/EmailChangeConfirmationRequest'
+          application/*+json:
+            schema:
+              $ref: '#/components/schemas/EmailChangeConfirmationRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            text/plain:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+            text/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '400':
+          description: Bad Request
+          content:
+            text/plain:
+              schema:
+                $ref: '#/components/schemas/ApiResponseOfObject'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseOfObject'
+            text/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseOfObject'
+        '401':
+          description: Unauthorized
+          content:
+            text/plain:
+              schema:
+                $ref: '#/components/schemas/ApiResponseOfObject'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseOfObject'
+            text/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseOfObject'
+        '409':
+          description: Conflict
+          content:
+            text/plain:
+              schema:
+                $ref: '#/components/schemas/ApiResponseOfObject'
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseOfObject'
+            text/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseOfObject'
+        '500':
+          description: Unexpected server error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseOfObject'
   /api/auth/verify/otp:
     post:
       tags:
@@ -12823,6 +13097,31 @@ components:
           description: Optional metadata such as pagination or response source details.
           $ref: '#/components/schemas/Object'
       description: Standard JSON envelope returned by all API endpoints.
+    ApiResponseOfPendingEmailChangeResponse:
+      type: object
+      properties:
+        success:
+          description: Indicates whether the request succeeded.
+          $ref: '#/components/schemas/Boolean'
+        message:
+          description: Human-readable message summarizing the outcome.
+          $ref: '#/components/schemas/String'
+        data:
+          oneOf:
+            - type: 'null'
+            - description: Endpoint-specific response payload.
+              $ref: '#/components/schemas/PendingEmailChangeResponse'
+          description: Endpoint-specific response payload. `null` on error responses.
+        error:
+          oneOf:
+            - type: 'null'
+            - description: Structured error details when the request fails.
+              $ref: '#/components/schemas/ApiError'
+          description: Structured error details. Present only when `success` is `false`.
+        meta:
+          description: Optional metadata such as pagination or response source details.
+          $ref: '#/components/schemas/Object'
+      description: Standard JSON envelope returned by all API endpoints.
     ApiResponseOfPostCommentPageResponse:
       type: object
       properties:
@@ -13366,6 +13665,18 @@ components:
           description: "Leave occurrences that have already started alone. On by default — retroactively\r\ncancelling an event people attended is almost never what an organizer means."
           $ref: '#/components/schemas/Boolean'
       description: Cancels occurrences without deleting anything.
+    ChangeEmailRequest:
+      required:
+        - newEmail
+      type: object
+      properties:
+        newEmail:
+          $ref: '#/components/schemas/String'
+        currentPassword:
+          oneOf:
+            - type: 'null'
+            - description: "Required for accounts that have a password; omitted by OAuth-only accounts, which have\r\nnone to prove. MFA step-up gates the endpoint either way."
+              $ref: '#/components/schemas/String'
     ChangePasswordAuthenticatedRequest:
       required:
         - currentPassword
@@ -14506,6 +14817,22 @@ components:
           description: "True when no account currently uses the address. Advisory only: the address is not reserved\r\nby asking, and signup can still fail with a conflict if someone registers it first."
           $ref: '#/components/schemas/Boolean'
       description: Result of an email availability probe.
+    EmailChangeConfirmationRequest:
+      type: object
+      properties:
+        token:
+          oneOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/String'
+        code:
+          oneOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/String'
+        challenge:
+          oneOf:
+            - type: 'null'
+            - $ref: '#/components/schemas/String'
+      description: "Confirms an email change by either proof: the token from the emailed link, or the code and\r\nchallenge from the page that requested it."
     EmailMfaSettingsDto:
       required:
         - maskedEmail
@@ -16143,6 +16470,9 @@ components:
           oneOf:
             - type: 'null'
             - $ref: '#/components/schemas/String'
+        hasLocalPassword:
+          description: "True when the account has its own password. Independent of the provider flags: linking\r\nGoogle or Microsoft to an existing account leaves its password in place."
+          $ref: '#/components/schemas/Boolean'
         googleLinked:
           $ref: '#/components/schemas/Boolean'
         microsoftLinked:
@@ -16493,6 +16823,15 @@ components:
             - type: 'null'
             - $ref: '#/components/schemas/String'
         createdAt:
+          $ref: '#/components/schemas/DateTime'
+    PendingEmailChangeResponse:
+      required:
+        - newEmail
+      type: object
+      properties:
+        newEmail:
+          $ref: '#/components/schemas/String'
+        expiresAtUtc:
           $ref: '#/components/schemas/DateTime'
     PinnedEventResponse:
       type: object

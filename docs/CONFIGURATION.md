@@ -146,3 +146,29 @@ accumulate and slowly inflate the false-positive rate. A rebuild reads the autho
 publishes a fresh bitmap under a new generation key, then moves the pointer — which is the only
 operation that clears a bit. Values written while the rebuild was reading are replayed from a
 pending set, so a signup that commits mid-rebuild cannot be lost.
+
+## Email changes
+
+`POST /api/profile/email` starts a change of the address on an account. The address is a sign-in
+identity and an access token claim, so the endpoint is gated by MFA step-up and, for accounts that
+have one, the current password — and the change only lands once a confirmation sent to the *new*
+address comes back. The address being replaced gets a heads-up carrying no token, so a change
+started from a hijacked session is visible in the inbox that still belongs to the owner without
+being actionable from it.
+
+Unlike the availability probes, this endpoint *sends mail to an address the caller chose*, which
+makes it a way to have EventXperience deliver unsolicited mail to a third party.
+`RateLimiter:EmailChangePermitLimit` bounds that, defaulting to 3 per hour and partitioned by
+account rather than by IP, so the budget cannot be widened by changing network. Raise it only if you
+have a reason; the flow is sized for a person correcting a typo.
+
+Confirming revokes every session: `AuthVersion` is incremented in the same commit as the address —
+`JwtConfiguration.OnTokenValidated` rejects tokens whose claim no longer matches — and every
+refresh session for the account is dropped. Users sign in again with the new address.
+
+Two consequences are worth knowing about. The address left behind stays set in the `email` bloom
+filter until the next rebuild, because a filter has no delete; this is safe, since every write
+re-checks the database authoritatively and only read-only probes trust the filter. And pending event
+invitations addressed to either address are bound to the account's id on confirmation, because an
+unclaimed invitation is otherwise matched by `RecipientEmailNormalized` alone and would drop out of
+the recipient's list.

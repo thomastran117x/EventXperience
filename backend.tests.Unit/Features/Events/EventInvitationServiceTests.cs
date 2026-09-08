@@ -598,6 +598,84 @@ public class EventInvitationServiceTests
             .WithMessage("Link-based invitations must be declined from the invitation link.");
     }
 
+    /// <summary>
+    /// An unclaimed invitation is matched by address, so an account that changes its email would
+    /// otherwise lose sight of everything sent to the address it left. Binding the row to the
+    /// account id fixes it for this change and every later one.
+    /// </summary>
+    [Fact]
+    public async Task RelinkForEmailChangeAsync_ShouldClaimInvitationsForBothAddresses()
+    {
+        await using var harness = await EventInvitationHarness.CreateAsync();
+        var ev = await harness.SeedPrivatePublishedEventAsync();
+
+        var toOldAddress = harness.BuildInvitation(ev.Id, null, recipientEmail: "old@test.local");
+        var toNewAddress = harness.BuildInvitation(ev.Id, null, recipientEmail: "new@test.local");
+        var toSomeoneElse = harness.BuildInvitation(ev.Id, null, recipientEmail: "other@test.local");
+        harness.Db.EventInvitations.AddRange(toOldAddress, toNewAddress, toSomeoneElse);
+        await harness.Db.SaveChangesAsync();
+
+        await harness.Service.RelinkForEmailChangeAsync(
+            harness.MemberUserId,
+            "old@test.local",
+            "new@test.local");
+
+        harness.Db.ChangeTracker.Clear();
+        var invitations = await harness.Db.EventInvitations.ToListAsync();
+
+        invitations.Single(i => i.Id == toOldAddress.Id).RecipientUserId
+            .Should().Be(harness.MemberUserId);
+        invitations.Single(i => i.Id == toNewAddress.Id).RecipientUserId
+            .Should().Be(harness.MemberUserId);
+        invitations.Single(i => i.Id == toSomeoneElse.Id).RecipientUserId
+            .Should().BeNull();
+    }
+
+    [Fact]
+    public async Task RelinkForEmailChangeAsync_ShouldLeaveInvitationsThatAlreadyHaveARecipient()
+    {
+        await using var harness = await EventInvitationHarness.CreateAsync();
+        var ev = await harness.SeedPrivatePublishedEventAsync();
+
+        var someoneElses = harness.BuildInvitation(
+            ev.Id,
+            harness.OtherUserId,
+            recipientEmail: "old@test.local");
+        harness.Db.EventInvitations.Add(someoneElses);
+        await harness.Db.SaveChangesAsync();
+
+        await harness.Service.RelinkForEmailChangeAsync(
+            harness.MemberUserId,
+            "old@test.local",
+            "new@test.local");
+
+        harness.Db.ChangeTracker.Clear();
+        (await harness.Db.EventInvitations.SingleAsync(i => i.Id == someoneElses.Id))
+            .RecipientUserId.Should().Be(harness.OtherUserId);
+    }
+
+    /// <summary>
+    /// The my-invitations cache is keyed by address, so both keys have to go or the user keeps
+    /// seeing a list built for an address they no longer have.
+    /// </summary>
+    [Fact]
+    public async Task RelinkForEmailChangeAsync_ShouldEvictBothCacheKeys()
+    {
+        await using var harness = await EventInvitationHarness.CreateAsync();
+
+        await harness.Service.RelinkForEmailChangeAsync(
+            harness.MemberUserId,
+            "old@test.local",
+            "new@test.local");
+
+        harness.RefreshCacheMock.Verify(
+            cache => cache.RemoveAsync($"invitation:user:{harness.MemberUserId}:old@test.local"),
+            Times.Once);
+        harness.RefreshCacheMock.Verify(
+            cache => cache.RemoveAsync($"invitation:user:{harness.MemberUserId}:new@test.local"),
+            Times.Once);
+    }
+
     private sealed class EventInvitationHarness : IAsyncDisposable
     {
         private readonly SqliteConnection _connection;

@@ -160,6 +160,50 @@ public sealed class EmailTemplateRenderer : IEmailContentRenderer
                 Code: null,
                 MutedNote: "If you didn't make this change, please reset your password immediately and contact support."),
 
+            EmailMessageType.EmailChangeRequested => new Content(
+                Subject: "Confirm the change to your email address",
+                Preheader: "A change to the email address on your account was requested.",
+                Heading: "An email change was requested",
+                Greeting: greeting,
+                Intro:
+                [
+                    $"Someone asked to change the email address on your EventXperience account to {RequireNewEmail(message)}.",
+                    "To finish the change, open the confirmation link we sent to that new address. Until then, nothing about your account has changed."
+                ],
+                Cta: null,
+                Code: null,
+                MutedNote: "If you didn't request this, change your password now - that cancels this request and signs out every device. The change cannot complete without access to the new address, but a request you didn't make means someone else is in your account."),
+
+            EmailMessageType.EmailChangeVerify => new Content(
+                Subject: "Confirm your new email address",
+                Preheader: "Confirm this address to finish moving your account to it.",
+                Heading: "Confirm your new email address",
+                Greeting: greeting,
+                Intro:
+                [
+                    "This address was given as the new email for an EventXperience account. Confirm it below to complete the change.",
+                    "Once confirmed you'll be signed out everywhere and will need to sign in again using this address."
+                ],
+                Cta: new Cta(
+                    BuildUrl(baseUrl, "/auth/verify-email-change", RequireToken(message)),
+                    "Confirm email change"),
+                Code: message.Code,
+                MutedNote: "This link will expire soon. If you weren't expecting it, you can safely ignore this email."),
+
+            EmailMessageType.EmailChanged => new Content(
+                Subject: "Your email address was changed",
+                Preheader: "This is a confirmation that your account email was updated.",
+                Heading: "Your email address was changed",
+                Greeting: greeting,
+                Intro:
+                [
+                    $"The email address for your EventXperience account is now {RequireNewEmail(message)}.",
+                    "Every session has been signed out. Use the new address the next time you sign in."
+                ],
+                Cta: new Cta($"{baseUrl}/auth/login", "Go to sign in"),
+                Code: null,
+                MutedNote: "If you didn't make this change, contact support immediately."),
+
             EmailMessageType.InvitationAccepted => new Content(
                 Subject: $"{ActorLabel(message)} accepted your invitation to {eventName}",
                 Preheader: $"{ActorLabel(message)} is coming to {eventName}.",
@@ -244,6 +288,11 @@ public sealed class EmailTemplateRenderer : IEmailContentRenderer
         string.IsNullOrWhiteSpace(message.Token)
             ? throw new InvalidOperationException($"Email type '{message.Type}' requires a token.")
             : message.Token!;
+
+    private static string RequireNewEmail(EmailMessage message) =>
+        string.IsNullOrWhiteSpace(message.NewEmail)
+            ? throw new InvalidOperationException($"Email type '{message.Type}' requires a new email.")
+            : message.NewEmail!.Trim();
 
     private static string RequireUsername(EmailMessage message) =>
         string.IsNullOrWhiteSpace(message.Username)

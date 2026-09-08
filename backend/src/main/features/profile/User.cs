@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations.Schema;
+
 namespace backend.main.features.profile;
 
 public class User
@@ -11,6 +13,17 @@ public class User
         get; set;
     }
     public string? Password
+    {
+        get; set;
+    }
+
+    /// <summary>
+    /// Whether the account has a password of its own. Not persisted: reads that sanitize
+    /// <see cref="Password"/> away still need to say whether one exists, because linking a
+    /// provider does not remove it — an account can hold both.
+    /// </summary>
+    [NotMapped]
+    public bool HasLocalPassword
     {
         get; set;
     }

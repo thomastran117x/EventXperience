@@ -828,15 +828,16 @@ namespace backend.main.features.auth
 
         private async Task<User?> ResolveGoogleUserAsync(OAuthUser oauthUser)
         {
+            // The provider id is the authoritative identity for a provider sign-in, so it is
+            // resolved first and on its own. An account that changes its email address keeps the
+            // address the provider still reports, and once that released address is claimed by
+            // someone else the two lookups disagree permanently — comparing them here would lock
+            // the original account out of the only sign-in method it may have.
             var providerUser = await _userRepository.GetOAuthByGoogleIdAsync(oauthUser.Id);
-            var emailUser = await _userRepository.GetOAuthByEmailAsync(oauthUser.Email);
-
-            if (providerUser != null && emailUser != null && providerUser.Id != emailUser.Id)
-                throw new ConflictException("This Google account is already linked to another user.");
-
             if (providerUser != null)
                 return ToUser(providerUser);
 
+            var emailUser = await _userRepository.GetOAuthByEmailAsync(oauthUser.Email);
             if (emailUser == null)
                 return null;
 
@@ -854,15 +855,16 @@ namespace backend.main.features.auth
 
         private async Task<User?> ResolveMicrosoftUserAsync(OAuthUser oauthUser)
         {
+            // The provider id is the authoritative identity for a provider sign-in, so it is
+            // resolved first and on its own. An account that changes its email address keeps the
+            // address the provider still reports, and once that released address is claimed by
+            // someone else the two lookups disagree permanently — comparing them here would lock
+            // the original account out of the only sign-in method it may have.
             var providerUser = await _userRepository.GetOAuthByMicrosoftIdAsync(oauthUser.Id);
-            var emailUser = await _userRepository.GetOAuthByEmailAsync(oauthUser.Email);
-
-            if (providerUser != null && emailUser != null && providerUser.Id != emailUser.Id)
-                throw new ConflictException("This Microsoft account is already linked to another user.");
-
             if (providerUser != null)
                 return ToUser(providerUser);
 
+            var emailUser = await _userRepository.GetOAuthByEmailAsync(oauthUser.Email);
             if (emailUser == null)
                 return null;
 

@@ -42,6 +42,7 @@ namespace backend.main.features.auth.stepup
         private readonly IDeviceTrustService _deviceTrustService;
         private readonly IAuthUserRepository _userRepository;
         private readonly IAuthSessionService _authSessionService;
+        private readonly ITokenService _tokenService;
         private readonly ClientRequestInfo _requestInfo;
 
         public LoginStepUpChallengeService(
@@ -52,6 +53,7 @@ namespace backend.main.features.auth.stepup
             IDeviceTrustService deviceTrustService,
             IAuthUserRepository userRepository,
             IAuthSessionService authSessionService,
+            ITokenService tokenService,
             ClientRequestInfo requestInfo
         )
         {
@@ -62,6 +64,7 @@ namespace backend.main.features.auth.stepup
             _deviceTrustService = deviceTrustService;
             _userRepository = userRepository;
             _authSessionService = authSessionService;
+            _tokenService = tokenService;
             _requestInfo = requestInfo;
         }
 
@@ -82,6 +85,7 @@ namespace backend.main.features.auth.stepup
                     PendingId = CreateRandomToken(),
                     ChallengeHash = CryptoHelper.HashToken(rawChallenge),
                     UserId = user.Id,
+                    AuthVersion = user.AuthVersion,
                     Email = user.Email,
                     PhoneNumber = CanUseSms(smsEnrollment) ? smsEnrollment!.PhoneNumber : null,
                     HasTotp = totpEnrollment?.IsTotpMfaEnabled == true && EnvironmentSetting.AuthTotpMfaStepUpEnabled,
@@ -354,18 +358,52 @@ namespace backend.main.features.auth.stepup
                 if (user.IsDisabled)
                     throw new ForbiddenException("This account is disabled.");
 
+                // Revoking sessions cannot reach a challenge that is mid-flight: it holds no
+                // session yet. Without this check, a password or email change that signed every
+                // device out would still be followed by a challenge completing into a fresh
+                // session for whoever started it.
+                if (user.AuthVersion != state.AuthVersion)
+                {
+                    await DeleteStateAsync(state);
+                    throw new UnauthorizedException(
+                        "This sign-in verification challenge is no longer valid. Please sign in again."
+                    );
+                }
+
+                var userToken = await _authSessionService.IssueAsync(
+                    user,
+                    state.Transport,
+                    rememberMe: state.RememberMe
+                );
+
+                // The check above is not enough on its own. A rotation committing between it and
+                // the line above would run its revocation before this session existed, so nothing
+                // would have removed it - and although the access token just minted carries the
+                // stale version and is rejected, the refresh session would still mint valid ones.
+                // Re-read once the session exists and undo it if the account moved on.
+                var current = await _userRepository.GetUserAsync(state.UserId);
+                if (current == null || current.AuthVersion != state.AuthVersion)
+                {
+                    // Revoking the account's sessions rather than just this one: a rotation has
+                    // happened, so everything is meant to be gone, and this is idempotent with the
+                    // revocation the rotation already ran.
+                    await _tokenService.RevokeAllRefreshSessionsAsync(state.UserId);
+                    await DeleteStateAsync(state);
+                    throw new UnauthorizedException(
+                        "This sign-in verification challenge is no longer valid. Please sign in again."
+                    );
+                }
+
+                // Deliberately after the re-check rather than before the session is issued.
+                // Trusting a device persists for 90 days and lets it skip MFA, and an email change
+                // leaves the password intact - so granting trust on a path that then rejects the
+                // sign-in would hand a lasting bypass to whoever completed the stale challenge.
                 await _deviceTrustService.TrustAsync(
                     state.UserId,
                     state.TrustedDeviceId,
                     state.DeviceType,
                     state.ClientName,
                     state.IpAddress
-                );
-
-                var userToken = await _authSessionService.IssueAsync(
-                    user,
-                    state.Transport,
-                    rememberMe: state.RememberMe
                 );
 
                 await DeleteStateAsync(state);
@@ -567,6 +605,14 @@ namespace backend.main.features.auth.stepup
                 get; set;
             }
             public required string ChallengeHash
+            {
+                get; set;
+            }
+            /// <summary>
+            /// The account's auth version when the challenge began. A challenge that outlives a
+            /// security-sensitive change must not still be able to mint a session.
+            /// </summary>
+            public int AuthVersion
             {
                 get; set;
             }

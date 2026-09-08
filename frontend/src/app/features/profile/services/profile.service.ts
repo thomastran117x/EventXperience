@@ -1,7 +1,11 @@
 import { Injectable } from '@angular/core';
 import { Observable, from, map, switchMap } from 'rxjs';
 
-import { ApiEnvelope, requireEnvelopeData } from '../../../core/api/models/api-envelope.model';
+import {
+  ApiEnvelope,
+  extractEnvelopeData,
+  requireEnvelopeData,
+} from '../../../core/api/models/api-envelope.model';
 import { ApiClient } from '../../../core/api/services/api-client.service';
 import { AuthTokenService } from '../../../core/api/services/auth-token.service';
 import { environment } from '../../../../environments/environment';
@@ -23,10 +27,22 @@ export interface MyProfile {
   Usertype: string;
   Phone?: string | null;
   Address?: string | null;
+  HasLocalPassword: boolean;
   GoogleLinked: boolean;
   MicrosoftLinked: boolean;
   CreatedAtUtc: string;
   UpdatedAtUtc: string;
+}
+
+/** The OTP challenge handle returned when an email change is requested. */
+export interface EmailChangeChallenge {
+  Challenge: string;
+  ExpiresAtUtc: string;
+}
+
+export interface PendingEmailChange {
+  NewEmail: string;
+  ExpiresAtUtc: string;
 }
 
 export interface PublicProfile {
@@ -83,6 +99,30 @@ export class ProfileService {
       currentPassword,
       newPassword,
     });
+  }
+
+  requestEmailChange(newEmail: string, currentPassword?: string): Observable<EmailChangeChallenge> {
+    return this.postWithCsrf<ApiEnvelope<EmailChangeChallenge>>(`${this.baseUrl}/email`, {
+      newEmail,
+      currentPassword,
+    }).pipe(map((res) => requireEnvelopeData(res, 'Email change response was incomplete.')));
+  }
+
+  /** Resolves to null when nothing is awaiting confirmation. */
+  getPendingEmailChange(): Observable<PendingEmailChange | null> {
+    return this.getWithCsrf<ApiEnvelope<PendingEmailChange>>(`${this.baseUrl}/email/pending`).pipe(
+      map((res) => extractEnvelopeData(res) ?? null),
+    );
+  }
+
+  cancelEmailChange(): Observable<void> {
+    return from(this.authToken.ensureCsrfToken()).pipe(
+      switchMap(() =>
+        this.api.delete<void>(`${this.baseUrl}/email/pending`, {
+          withCredentials: true,
+        }),
+      ),
+    );
   }
 
   deleteAccount(): Observable<void> {

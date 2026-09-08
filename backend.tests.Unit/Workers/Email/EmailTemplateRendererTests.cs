@@ -301,6 +301,7 @@ public class EmailTemplateRendererTests
             Code = "123456",
             RecipientName = "Thomas",
             Username = "thomas-user",
+            NewEmail = "member.new@example.com",
             SignInProviders = ["Google", "Microsoft"],
             EventId = 7,
             EventName = "Sample Event",

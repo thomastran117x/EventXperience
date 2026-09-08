@@ -8,6 +8,7 @@ using backend.main.features.auth.contracts.responses;
 using backend.main.features.auth.oauth;
 using backend.main.features.auth.token;
 using backend.main.features.profile;
+using backend.main.features.profile.email;
 using backend.main.shared.exceptions.http;
 using backend.main.shared.requests;
 using backend.main.shared.responses;
@@ -38,6 +39,8 @@ namespace backend.main.features.auth
         private readonly SeedAccountBypassPolicy _seedBypass;
         private readonly ClientRequestInfo _requestInfo;
         private readonly IConfiguration _configuration;
+        private readonly ITokenService _tokenService;
+        private readonly IEmailChangeService _emailChangeService;
 
         public AuthController(
             IAuthService authService,
@@ -47,7 +50,9 @@ namespace backend.main.features.auth
             ICaptchaService captchaService,
             SeedAccountBypassPolicy seedBypass,
             ClientRequestInfo requestInfo,
-            IConfiguration configuration
+            IConfiguration configuration,
+            ITokenService tokenService,
+            IEmailChangeService emailChangeService
         )
         {
             _authService = authService;
@@ -58,6 +63,8 @@ namespace backend.main.features.auth
             _seedBypass = seedBypass;
             _requestInfo = requestInfo;
             _configuration = configuration;
+            _tokenService = tokenService;
+            _emailChangeService = emailChangeService;
         }
 
         [HttpPost("login")]
@@ -253,6 +260,84 @@ namespace backend.main.features.auth
                     return HandleError.Resolve(e);
 
                 Logger.Error($"[AuthController] CheckEmailAvailability failed: {e}");
+                return HandleError.Resolve(e);
+            }
+        }
+
+        [HttpGet("verify/email-change")]
+        [AllowAnonymous]
+        [EnableRateLimiting(RateLimiterConfiguration.AuthPolicyName)]
+        [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status302Found)]
+        public IActionResult VerifyEmailChange([FromQuery] string token)
+        {
+            var redirectUrl = BuildFrontendAuthUrl("verify-email-change", token);
+            if (redirectUrl != null)
+                return Redirect(redirectUrl);
+
+            return Ok(
+                new MessageResponse(
+                    "Confirming an email change requires confirmation from the frontend. Open the link in the app to complete the change."
+                )
+            );
+        }
+
+        /// <summary>
+        /// Applies a pending email change. Anonymous by design: the token and the OTP challenge are
+        /// each bound to an account id and single-use, which is what lets the emailed link be opened
+        /// on whatever device reads that inbox. No session is issued - confirming signs every
+        /// session out, including the one that asked.
+        /// </summary>
+        [HttpPost("verify/email-change")]
+        [AllowAnonymous]
+        [ValidateAntiForgeryToken]
+        [EnableRateLimiting(RateLimiterConfiguration.AuthPolicyName)]
+        [ProducesResponseType(typeof(MessageResponse), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(ApiResponse<object?>), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(typeof(ApiResponse<object?>), StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(typeof(ApiResponse<object?>), StatusCodes.Status409Conflict)]
+        public async Task<IActionResult> VerifyEmailChange(
+            [FromBody] EmailChangeConfirmationRequest request)
+        {
+            try
+            {
+                PendingEmailChange pending;
+
+                if (!string.IsNullOrWhiteSpace(request.Token))
+                {
+                    pending = await _tokenService.ConsumeEmailChangeTokenAsync(request.Token);
+                }
+                else if (!string.IsNullOrWhiteSpace(request.Code)
+                    && !string.IsNullOrWhiteSpace(request.Challenge))
+                {
+                    pending = await _tokenService.ConsumeEmailChangeOtpAsync(
+                        request.Code,
+                        request.Challenge
+                    );
+                }
+                else
+                {
+                    throw new BadRequestException(
+                        "Provide either a confirmation token or a code and challenge."
+                    );
+                }
+
+                await _emailChangeService.ConfirmAsync(pending, HttpContext.RequestAborted);
+
+                // Every session was just revoked, so there is nothing to clear server-side but the
+                // browser's own refresh cookie.
+                HttpUtility.ClearBrowserRefreshSession(Response);
+
+                return Ok(new MessageResponse(
+                    "Email changed successfully. Please sign in with your new email address."
+                ));
+            }
+            catch (Exception e)
+            {
+                if (e is AppException)
+                    return HandleError.Resolve(e);
+
+                Logger.Error($"[AuthController] VerifyEmailChange failed: {e}");
                 return HandleError.Resolve(e);
             }
         }

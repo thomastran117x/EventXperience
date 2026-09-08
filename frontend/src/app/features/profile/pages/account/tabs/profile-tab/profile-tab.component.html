@@ -175,7 +175,10 @@
             </p>
           </div>
 
-          <p class="text-xs text-faint">Email address and account type cannot be changed here.</p>
+          <p class="text-xs text-faint">
+            Account type cannot be changed here. Your email address is changed from its own card
+            below.
+          </p>
 
           <div class="flex flex-col gap-3 sm:flex-row">
             <button
@@ -281,6 +284,188 @@
               </button>
             </div>
           </form>
+        </div>
+      </article>
+
+      <!-- Email card -->
+      <article class="rounded-3xl border border-line bg-glass px-6 py-6 backdrop-blur-xl">
+        <p class="text-xs font-semibold uppercase tracking-[0.22em] text-accent">Email</p>
+        <div class="mt-2 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 class="text-xl font-bold">Your email address</h2>
+            <p class="mt-2 text-sm text-subtle">
+              Your account uses
+              <span class="font-semibold text-content">{{ p.Email }}</span>
+              to sign in and to receive everything we send you.
+            </p>
+            <p class="mt-2 text-sm text-faint">
+              Changing it needs confirmation from the new address, and signs you out everywhere.
+            </p>
+          </div>
+          <button
+            *ngIf="!emailChangeRequested && !awaitingEmailConfirmation"
+            type="button"
+            (click)="startEmailChange()"
+            class="inline-flex flex-none items-center justify-center rounded-2xl border border-line-strong px-4 py-2 text-sm font-semibold text-muted transition hover:bg-glass-strong disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Change email
+          </button>
+        </div>
+
+        <!-- Step 1: prove it is you, then name the new address. -->
+        <div *ngIf="emailChangeRequested && !awaitingEmailConfirmation" class="mt-6">
+          <app-mfa-gate
+            *ngIf="!emailMfaVerified"
+            (verified)="emailMfaVerified = true"
+          ></app-mfa-gate>
+
+          <form
+            *ngIf="emailMfaVerified"
+            class="space-y-4 rounded-3xl border border-accent/25 bg-accent/10 px-5 py-5"
+            [formGroup]="emailForm"
+            (ngSubmit)="requestEmailChange()"
+          >
+            <div class="space-y-2">
+              <label class="text-sm font-semibold text-muted" for="change-email">
+                New email address
+              </label>
+              <input
+                id="change-email"
+                type="email"
+                formControlName="newEmail"
+                autocomplete="email"
+                placeholder="you@example.com"
+                class="w-full rounded-2xl border border-line bg-glass-strong px-4 py-3 text-base text-content placeholder:text-faint outline-none transition focus:border-accent focus:ring-4 focus:ring-accent/15"
+              />
+              <p *ngIf="emailForm.controls.newEmail.pending" class="text-sm text-faint">
+                Checking availability...
+              </p>
+              <p
+                *ngIf="emailForm.controls.newEmail.hasError('emailTaken')"
+                class="text-sm text-danger"
+              >
+                An account already uses that email address.
+              </p>
+              <p
+                *ngIf="
+                  emailForm.controls.newEmail.touched &&
+                  (emailForm.controls.newEmail.hasError('required') ||
+                    emailForm.controls.newEmail.hasError('email') ||
+                    emailForm.controls.newEmail.hasError('maxlength'))
+                "
+                class="text-sm text-danger"
+              >
+                Enter a valid email address of 254 characters or fewer.
+              </p>
+            </div>
+
+            <div *ngIf="requiresPasswordForEmailChange" class="space-y-2">
+              <label class="text-sm font-semibold text-muted" for="change-email-password">
+                Current password
+              </label>
+              <input
+                id="change-email-password"
+                type="password"
+                formControlName="currentPassword"
+                autocomplete="current-password"
+                class="w-full rounded-2xl border border-line bg-glass-strong px-4 py-3 text-base text-content placeholder:text-faint outline-none transition focus:border-accent focus:ring-4 focus:ring-accent/15"
+              />
+            </div>
+
+            <p class="text-xs leading-5 text-faint">
+              We will send a confirmation code to the new address, and let your current address know
+              a change was requested. Nothing changes until you confirm.
+            </p>
+
+            <div class="flex flex-col gap-3 sm:flex-row">
+              <button
+                type="submit"
+                [disabled]="emailSaving"
+                class="inline-flex items-center justify-center rounded-2xl bg-accent px-5 py-3 text-sm font-semibold text-accent-contrast transition hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {{ emailSaving ? 'Sending...' : 'Send confirmation' }}
+              </button>
+              <button
+                type="button"
+                (click)="cancelEmailChange()"
+                [disabled]="emailSaving"
+                class="inline-flex items-center justify-center rounded-2xl border border-line-strong px-5 py-3 text-sm font-semibold text-muted transition hover:bg-glass-strong disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Step 2: confirm from the code we just sent. -->
+        <div
+          *ngIf="awaitingEmailConfirmation"
+          class="mt-6 space-y-4 rounded-3xl border border-accent/25 bg-accent/10 px-5 py-5"
+        >
+          <div>
+            <h3 class="text-base font-semibold text-content">Confirm your new address</h3>
+            <p class="mt-1 text-sm text-subtle">
+              We sent a code to
+              <span class="font-semibold text-content">{{ pendingEmailChange?.NewEmail }}</span
+              >. Enter it below, or open the link in that email from any device.
+            </p>
+            <p class="mt-1 text-xs text-faint">
+              Expires {{ pendingEmailChange?.ExpiresAtUtc | date: 'shortTime' }}.
+            </p>
+          </div>
+
+          <form
+            *ngIf="emailChallenge"
+            class="space-y-4"
+            [formGroup]="emailCodeForm"
+            (ngSubmit)="confirmEmailChange()"
+          >
+            <div class="space-y-2">
+              <label class="text-sm font-semibold text-muted" for="change-email-code">
+                Confirmation code
+              </label>
+              <input
+                id="change-email-code"
+                type="text"
+                inputmode="numeric"
+                formControlName="code"
+                autocomplete="one-time-code"
+                placeholder="123456"
+                class="w-full rounded-2xl border border-line bg-glass-strong px-4 py-3 text-base text-content placeholder:text-faint outline-none transition focus:border-accent focus:ring-4 focus:ring-accent/15"
+              />
+              <p
+                *ngIf="emailCodeForm.controls.code.invalid && emailCodeForm.controls.code.touched"
+                class="text-sm text-danger"
+              >
+                Enter the 6-digit code from the email.
+              </p>
+            </div>
+            <p class="text-xs leading-5 text-faint">
+              Confirming signs you out on every device. Sign back in with your new address.
+            </p>
+            <button
+              type="submit"
+              [disabled]="emailSaving"
+              class="inline-flex items-center justify-center rounded-2xl bg-accent px-5 py-3 text-sm font-semibold text-accent-contrast transition hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {{ emailSaving ? 'Confirming...' : 'Confirm email change' }}
+            </button>
+          </form>
+
+          <!-- Reached by reloading the page: the challenge only lives in memory, so the emailed
+               link is the way back in. -->
+          <p *ngIf="!emailChallenge" class="text-sm text-subtle">
+            Open the confirmation link in that email to finish the change.
+          </p>
+
+          <button
+            type="button"
+            (click)="abandonEmailChange()"
+            [disabled]="emailSaving"
+            class="inline-flex items-center justify-center rounded-2xl border border-line-strong px-5 py-3 text-sm font-semibold text-muted transition hover:bg-glass-strong disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Cancel email change
+          </button>
         </div>
       </article>
 

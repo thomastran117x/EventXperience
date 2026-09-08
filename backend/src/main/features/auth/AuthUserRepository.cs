@@ -249,6 +249,7 @@ namespace backend.main.features.auth
                     Id = u.Id,
                     Email = u.Email,
                     Password = null,
+                    HasLocalPassword = u.Password != null,
                     Usertype = AuthRoles.NormalizeStored(u.Usertype),
                     Name = u.Name,
                     Username = u.Username,
@@ -278,6 +279,7 @@ namespace backend.main.features.auth
                     Email = u.Email,
                     Password = u.Password,
                     Usertype = AuthRoles.NormalizeStored(u.Usertype),
+                    Name = u.Name,
                     IsDisabled = u.IsDisabled,
                     AuthVersion = u.AuthVersion,
                 })
@@ -294,6 +296,24 @@ namespace backend.main.features.auth
                     Email = u.Email,
                     Password = u.Password,
                     Usertype = AuthRoles.NormalizeStored(u.Usertype),
+                    Name = u.Name,
+                    IsDisabled = u.IsDisabled,
+                    AuthVersion = u.AuthVersion,
+                })
+                .FirstOrDefaultAsync();
+        }
+
+        public async Task<UserAuthRecord?> GetAuthByIdAsync(int id)
+        {
+            return await GetAuthRecords()
+                .Where(u => u.Id == id)
+                .Select(u => new UserAuthRecord
+                {
+                    Id = u.Id,
+                    Email = u.Email,
+                    Password = u.Password,
+                    Usertype = AuthRoles.NormalizeStored(u.Usertype),
+                    Name = u.Name,
                     IsDisabled = u.IsDisabled,
                     AuthVersion = u.AuthVersion,
                 })
@@ -588,7 +608,7 @@ namespace backend.main.features.auth
                         user,
                         PreviousUsername: currentUsername);
                 }
-                catch (Exception exception) when (IsUsernameConflict(exception))
+                catch (Exception exception) when (IsWriteConflict(exception))
                 {
                     await transaction.RollbackAsync();
                     _context.ChangeTracker.Clear();
@@ -602,7 +622,81 @@ namespace backend.main.features.auth
             });
         }
 
-        private static bool IsUsernameConflict(Exception exception)
+        public async Task<EmailChangeRecord> ChangeEmailAsync(
+            int userId,
+            string email,
+            int expectedAuthVersion,
+            DateTime utcNow)
+        {
+            var strategy = _context.Database.CreateExecutionStrategy();
+            return await strategy.ExecuteAsync(async () =>
+            {
+                await using var transaction = await _context.Database.BeginTransactionAsync(
+                    IsolationLevel.Serializable);
+                try
+                {
+                    // Same row lock as ChangeUsernameAsync: it serializes concurrent changes to
+                    // this account, while the serializable transaction covers the uniqueness check
+                    // against an address that has no row of its own to lock.
+                    var user = _context.Database.IsNpgsql()
+                        ? await _context.Users
+                            .FromSqlInterpolated(
+                                $"SELECT * FROM \"Users\" WHERE \"Id\" = {userId} FOR UPDATE")
+                            .SingleOrDefaultAsync()
+                        : await _context.Users.FindAsync(userId);
+                    if (user == null)
+                        return new EmailChangeRecord(EmailChangeStatus.UserNotFound);
+
+                    // Verified here rather than by the caller: the row is locked, so this is the
+                    // only place the version can be compared without a window in which a password
+                    // change could commit between the check and the write.
+                    if (user.AuthVersion != expectedAuthVersion)
+                        return new EmailChangeRecord(EmailChangeStatus.Stale, user);
+
+                    var previousEmail = user.Email;
+
+                    // Email is a citext column, so the database compares case-insensitively and
+                    // this normalised comparison matches what the unique index would enforce.
+                    if (EmailPolicy.Normalize(previousEmail) == EmailPolicy.Normalize(email))
+                        return new EmailChangeRecord(EmailChangeStatus.Unchanged, user);
+
+                    if (await _context.Users
+                        .AsNoTracking()
+                        .AnyAsync(other => other.Id != userId && other.Email == email))
+                    {
+                        return new EmailChangeRecord(EmailChangeStatus.Unavailable, user);
+                    }
+
+                    user.Email = email;
+                    // Bumped in the same SaveChanges as the address itself: the email is an access
+                    // token claim, so a change that landed without invalidating outstanding tokens
+                    // would leave live sessions authenticating as an address the account no longer
+                    // owns. See JwtConfiguration.OnTokenValidated.
+                    user.AuthVersion += 1;
+                    user.UpdatedAt = utcNow;
+
+                    await _context.SaveChangesAsync();
+                    await transaction.CommitAsync();
+                    return new EmailChangeRecord(
+                        EmailChangeStatus.Changed,
+                        user,
+                        PreviousEmail: previousEmail);
+                }
+                catch (Exception exception) when (IsWriteConflict(exception))
+                {
+                    await transaction.RollbackAsync();
+                    _context.ChangeTracker.Clear();
+                    return new EmailChangeRecord(EmailChangeStatus.Unavailable);
+                }
+                catch
+                {
+                    await transaction.RollbackAsync();
+                    throw;
+                }
+            });
+        }
+
+        private static bool IsWriteConflict(Exception exception)
         {
             var databaseException = exception is DbUpdateException
                 ? exception.InnerException
