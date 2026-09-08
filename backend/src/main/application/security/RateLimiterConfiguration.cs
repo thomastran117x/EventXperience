@@ -29,6 +29,19 @@ namespace backend.main.application.security
         private static readonly TimeSpan UsernameAvailabilityWindow = TimeSpan.FromMinutes(1);
 
         /// <summary>
+        /// Policy for the anonymous username suggestion draw. It needs its own budget rather than
+        /// sharing the availability one because it is meaningfully more expensive: a suggestion
+        /// request generates a batch of candidates and can issue a database query per tier, where
+        /// an availability probe is one bloom lookup and at most one query. The enumeration angle
+        /// is weaker here, not stronger — the caller chooses nothing, so it cannot test a name it
+        /// cares about — so this limit is about cost, not disclosure. Sized for a page load plus a
+        /// few deliberate reshuffles.
+        /// </summary>
+        public const string UsernameSuggestionsPolicyName = "username-suggestions";
+        private const int UsernameSuggestionsPermitLimit = 10;
+        private static readonly TimeSpan UsernameSuggestionsWindow = TimeSpan.FromMinutes(1);
+
+        /// <summary>
         /// Policy for the anonymous email availability probe. Deliberately half the username
         /// budget: a username namespace has to be walked to be mined, whereas emails are tested
         /// against a list the attacker already holds, so every permitted request is a usable
@@ -61,6 +74,9 @@ namespace backend.main.application.security
             var usernameAvailabilityPermitLimit =
                 configuration?.GetValue<int?>("RateLimiter:UsernameAvailabilityPermitLimit")
                 ?? UsernameAvailabilityPermitLimit;
+            var usernameSuggestionsPermitLimit =
+                configuration?.GetValue<int?>("RateLimiter:UsernameSuggestionsPermitLimit")
+                ?? UsernameSuggestionsPermitLimit;
             var emailAvailabilityPermitLimit =
                 configuration?.GetValue<int?>("RateLimiter:EmailAvailabilityPermitLimit")
                 ?? EmailAvailabilityPermitLimit;
@@ -130,6 +146,20 @@ namespace backend.main.application.security
                         {
                             PermitLimit = usernameAvailabilityPermitLimit,
                             Window = UsernameAvailabilityWindow,
+                            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                            QueueLimit = 0
+                        });
+                });
+
+                options.AddPolicy(UsernameSuggestionsPolicyName, context =>
+                {
+                    var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+                    return RateLimitPartition.GetFixedWindowLimiter(
+                        $"username-suggestions:{ip}",
+                        _ => new FixedWindowRateLimiterOptions
+                        {
+                            PermitLimit = usernameSuggestionsPermitLimit,
+                            Window = UsernameSuggestionsWindow,
                             QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
                             QueueLimit = 0
                         });

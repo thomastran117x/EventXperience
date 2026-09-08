@@ -1,8 +1,12 @@
 import { Injectable } from '@angular/core';
-import { Observable, from, map, switchMap } from 'rxjs';
+import { Observable, catchError, from, map, of, switchMap } from 'rxjs';
 
 import { environment } from '../../../../environments/environment';
-import { ApiEnvelope, requireEnvelopeData } from '../../../core/api/models/api-envelope.model';
+import {
+  ApiEnvelope,
+  extractEnvelopeData,
+  requireEnvelopeData,
+} from '../../../core/api/models/api-envelope.model';
 import { ApiClient } from '../../../core/api/services/api-client.service';
 import { AuthTokenService } from '../../../core/api/services/auth-token.service';
 import {
@@ -27,6 +31,16 @@ export interface LoginRequest {
 export interface UsernameAvailabilityResponse {
   username: string;
   available: boolean;
+}
+
+/** One generated username, in the form that is claimed and the form that is shown. */
+export interface UsernameSuggestion {
+  username: string;
+  display: string;
+}
+
+export interface UsernameSuggestionsResponse {
+  suggestions: UsernameSuggestion[];
 }
 
 export interface EmailAvailabilityResponse {
@@ -226,6 +240,22 @@ export class AuthService {
         params: { username },
       })
       .pipe(map((res) => this.requireData(res, 'Username availability response was incomplete.')));
+  }
+
+  /**
+   * Draws a few free-looking usernames for the signup and rename forms.
+   *
+   * Fails soft to an empty list: the chips are decorative, and a form that works without them must
+   * not raise an error banner because a suggestion draw failed. This mirrors the fail-open stance
+   * the availability validator takes for the same reason.
+   */
+  getUsernameSuggestions(): Observable<UsernameSuggestion[]> {
+    return this.api
+      .get<ApiEnvelope<UsernameSuggestionsResponse>>(`${this.baseUrl}/username/suggestions`)
+      .pipe(
+        map((res) => extractEnvelopeData(res)?.suggestions ?? []),
+        catchError(() => of([] as UsernameSuggestion[])),
+      );
   }
 
   /**

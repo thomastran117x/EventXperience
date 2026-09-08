@@ -41,6 +41,15 @@
           } @else {
             <p class="oauth-role-hint">You will use this to sign in. You can change it later.</p>
           }
+
+          <app-username-suggestions
+            className="oauth-role-suggestions"
+            [suggestions]="suggestions()"
+            [loading]="suggestionsLoading()"
+            [selected]="normalizedUsername()"
+            (pick)="applySuggestion($event)"
+            (shuffle)="loadSuggestions()"
+          />
         </div>
 
         @for (option of roleOptions; track option) {

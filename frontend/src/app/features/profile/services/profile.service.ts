@@ -20,6 +20,8 @@ export interface MyProfile {
   Id: number;
   Email: string;
   Username: string;
+  /** The username as the owner wrote it. Render this; link and resolve by `Username`. */
+  UsernameDisplay: string;
   CanChangeUsername: boolean;
   UsernameChangeAvailableAtUtc?: string | null;
   Name?: string | null;
@@ -47,6 +49,8 @@ export interface PendingEmailChange {
 
 export interface PublicProfile {
   Username: string;
+  /** The username as the owner wrote it. Render this; link and resolve by `Username`. */
+  UsernameDisplay: string;
   Name?: string | null;
   Avatar?: string | null;
   Usertype: string;

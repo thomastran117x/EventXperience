@@ -9,6 +9,7 @@ using backend.main.features.auth.oauth;
 using backend.main.features.auth.token;
 using backend.main.features.profile;
 using backend.main.features.profile.email;
+using backend.main.features.profile.suggestions;
 using backend.main.shared.exceptions.http;
 using backend.main.shared.requests;
 using backend.main.shared.responses;
@@ -33,6 +34,7 @@ namespace backend.main.features.auth
         private const string DefaultFrontendUrl = "http://localhost:3090";
         private readonly IAuthService _authService;
         private readonly IUsernameAvailabilityService _usernameAvailability;
+        private readonly IUsernameSuggestionService _usernameSuggestions;
         private readonly IEmailAvailabilityService _emailAvailability;
         private readonly IAntiforgery _antiforgery;
         private readonly ICaptchaService _captchaService;
@@ -45,6 +47,7 @@ namespace backend.main.features.auth
         public AuthController(
             IAuthService authService,
             IUsernameAvailabilityService usernameAvailability,
+            IUsernameSuggestionService usernameSuggestions,
             IEmailAvailabilityService emailAvailability,
             IAntiforgery antiforgery,
             ICaptchaService captchaService,
@@ -57,6 +60,7 @@ namespace backend.main.features.auth
         {
             _authService = authService;
             _usernameAvailability = usernameAvailability;
+            _usernameSuggestions = usernameSuggestions;
             _emailAvailability = emailAvailability;
             _antiforgery = antiforgery;
             _captchaService = captchaService;
@@ -196,6 +200,60 @@ namespace backend.main.features.auth
                     return HandleError.Resolve(e);
 
                 Logger.Error($"[AuthController] CheckUsernameAvailability failed: {e}");
+                return HandleError.Resolve(e);
+            }
+        }
+
+        /// <summary>
+        /// Offers a few free-looking usernames, so a new account does not have to invent one.
+        /// </summary>
+        /// <remarks>
+        /// Anonymous for the same reason the availability probe is: it serves the signup form,
+        /// where there is no session yet. The account rename form reuses it rather than having an
+        /// authenticated twin — the answer depends on nothing about the caller, and a user's own
+        /// current name already reads as unavailable, so it can never be suggested back to them.
+        ///
+        /// Advisory, exactly like the probe next to it. Nothing here is reserved: two callers can
+        /// be handed the same name in the same moment, and a name offered here can be claimed
+        /// before it is submitted. The unique index is what decides.
+        ///
+        /// A short list, or an empty one, is a normal response rather than an error. Suggestions
+        /// decorate a form that works without them, so an exhausted draw must degrade to no chips
+        /// instead of failing a signup.
+        /// </remarks>
+        [HttpGet("username/suggestions")]
+        [AllowAnonymous]
+        [EnableRateLimiting(RateLimiterConfiguration.UsernameSuggestionsPolicyName)]
+        [ProducesResponseType(typeof(ApiResponse<UsernameSuggestionsResponse>), StatusCodes.Status200OK)]
+        public async Task<IActionResult> SuggestUsernames(CancellationToken cancellationToken)
+        {
+            try
+            {
+                var suggestions = await _usernameSuggestions.SuggestAsync(cancellationToken);
+
+                return StatusCode(
+                    200,
+                    new ApiResponse<UsernameSuggestionsResponse>(
+                        "Username suggestions generated.",
+                        new UsernameSuggestionsResponse
+                        {
+                            Suggestions = suggestions
+                                .Select(suggestion => new UsernameSuggestionResponse
+                                {
+                                    Username = suggestion.Username,
+                                    Display = suggestion.Display,
+                                })
+                                .ToList(),
+                        }
+                    )
+                );
+            }
+            catch (Exception e)
+            {
+                if (e is AppException)
+                    return HandleError.Resolve(e);
+
+                Logger.Error($"[AuthController] SuggestUsernames failed: {e}");
                 return HandleError.Resolve(e);
             }
         }
@@ -1083,6 +1141,9 @@ namespace backend.main.features.auth
                 Id = user.Id,
                 Email = user.Email,
                 Username = string.IsNullOrWhiteSpace(user.Username) ? user.Email : user.Username,
+                UsernameDisplay = string.IsNullOrWhiteSpace(user.Username)
+                    ? user.Email
+                    : (user.UsernameDisplay ?? user.Username),
                 Name = user.Name,
                 Avatar = user.Avatar,
                 Usertype = AuthRoles.NormalizeStored(user.Usertype),

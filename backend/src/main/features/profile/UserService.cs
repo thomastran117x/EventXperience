@@ -103,13 +103,15 @@ namespace backend.main.features.profile
 
         public async Task<User> ChangeUsernameAsync(int id, string username)
         {
-            var normalizedUsername = UsernamePolicy.NormalizeAndValidate(username);
+            var forms = UsernamePolicy.NormalizeAndValidateWithDisplay(username);
+            var normalizedUsername = forms.Username;
             var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
             var reservedUntilUtc = utcNow.AddDays(_profileOptions.UsernameChangeCooldownDays);
 
             var result = await _userRepository.ChangeUsernameAsync(
                 id,
                 normalizedUsername,
+                forms.Display,
                 utcNow,
                 reservedUntilUtc);
 
@@ -129,6 +131,9 @@ namespace backend.main.features.profile
                 case UsernameChangeStatus.UserNotFound:
                     throw new ResourceNotFoundException($"User with the id {id} is not found");
                 case UsernameChangeStatus.Unchanged:
+                    // Reached only when the key and the casing both already match. A casing-only
+                    // edit returns Changed, so this stays a genuine no-op rather than a rejection
+                    // of ThomasT for an account currently holding thomast.
                     throw new BadRequestException("New username must be different from the current username.");
                 case UsernameChangeStatus.CooldownActive when result.AvailableAtUtc is DateTime availableAtUtc:
                     throw new UsernameChangeCooldownException(availableAtUtc);

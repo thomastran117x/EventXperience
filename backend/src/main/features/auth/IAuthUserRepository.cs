@@ -21,6 +21,15 @@ namespace backend.main.features.auth
         Task<UserRecoveryRecord?> GetRecoveryByUsernameAsync(string username);
         Task<UserRecoveryRecord?> GetRecoveryByEmailAsync(string email);
         Task<bool> UsernameUnavailableAsync(string username, DateTime utcNow);
+
+        /// <summary>
+        /// The subset of <paramref name="usernames"/> already held by a user or covered by an
+        /// unexpired reservation. The batched form of <see cref="UsernameUnavailableAsync"/>,
+        /// evaluating the same two-table predicate in one round trip.
+        /// </summary>
+        Task<IReadOnlySet<string>> FindUnavailableUsernamesAsync(
+            IReadOnlyCollection<string> usernames,
+            DateTime utcNow);
         Task<UserOAuthRecord?> GetOAuthByEmailAsync(string email);
         Task<UserOAuthRecord?> GetOAuthByMicrosoftIdAsync(string microsoftId);
         Task<UserOAuthRecord?> GetOAuthByGoogleIdAsync(string googleId);

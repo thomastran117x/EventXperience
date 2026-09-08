@@ -165,6 +165,7 @@ public class AuthUserRepositoryTests
         var changed = await harness.Repository.ChangeUsernameAsync(
             user.Id,
             "strategy-renamed",
+            "strategy-renamed",
             now,
             now.AddDays(30));
 
@@ -453,6 +454,7 @@ public class AuthUserRepositoryTests
         var result = await harness.Repository.ChangeUsernameAsync(
             userId,
             "new-name",
+            "new-name",
             now,
             availableAt);
 
@@ -483,11 +485,13 @@ public class AuthUserRepositoryTests
         (await harness.Repository.ChangeUsernameAsync(
             userId,
             "second-name",
+            "second-name",
             now,
             availableAt)).Status.Should().Be(UsernameChangeStatus.Changed);
 
         var blocked = await harness.Repository.ChangeUsernameAsync(
             userId,
+            "third-name",
             "third-name",
             availableAt.AddTicks(-1),
             availableAt.AddDays(30));
@@ -496,6 +500,7 @@ public class AuthUserRepositoryTests
 
         var allowed = await harness.Repository.ChangeUsernameAsync(
             userId,
+            "third-name",
             "third-name",
             availableAt,
             availableAt.AddDays(30));
@@ -512,6 +517,7 @@ public class AuthUserRepositoryTests
         var first = await harness.Repository.ChangeUsernameAsync(
             userId,
             "first-name",
+            "first-name",
             now,
             now.AddDays(30));
 
@@ -520,6 +526,7 @@ public class AuthUserRepositoryTests
 
         var second = await harness.Repository.ChangeUsernameAsync(
             userId,
+            "second-name",
             "second-name",
             now.AddMinutes(1),
             now.AddDays(30).AddMinutes(1));

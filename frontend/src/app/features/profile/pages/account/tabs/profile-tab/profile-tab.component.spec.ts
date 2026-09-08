@@ -12,7 +12,10 @@ import { ProfileTabComponent } from './profile-tab.component';
 
 type AuthStub = Pick<
   AuthService,
-  'confirmEmailChange' | 'checkEmailAvailability' | 'checkUsernameAvailability'
+  | 'confirmEmailChange'
+  | 'checkEmailAvailability'
+  | 'checkUsernameAvailability'
+  | 'getUsernameSuggestions'
 >;
 type AuthTokenStub = Pick<AuthTokenService, 'logoutLocal'>;
 
@@ -21,6 +24,7 @@ function makeProfile(overrides: Partial<MyProfile> = {}): MyProfile {
     Id: 7,
     Email: 'member@example.com',
     Username: 'member',
+    UsernameDisplay: 'member',
     CanChangeUsername: true,
     UsernameChangeAvailableAtUtc: null,
     Name: 'Member',
@@ -62,9 +66,13 @@ describe('ProfileTabComponent', () => {
       'confirmEmailChange',
       'checkEmailAvailability',
       'checkUsernameAvailability',
+      'getUsernameSuggestions',
     ]);
     auth.checkEmailAvailability.and.returnValue(of({ email: '', available: true }));
     auth.checkUsernameAvailability.and.returnValue(of({ username: '', available: true }));
+    auth.getUsernameSuggestions.and.returnValue(
+      of([{ username: 'smartcat23', display: 'SmartCat23' }]),
+    );
 
     authToken = jasmine.createSpyObj<AuthTokenStub>('AuthTokenService', ['logoutLocal']);
 
@@ -121,9 +129,10 @@ describe('ProfileTabComponent', () => {
     expect(component.saving).toBeFalse();
   });
 
-  it('normalizes a verified username change and applies the cooldown response', () => {
+  it('sends a verified username change with its casing intact and applies the cooldown response', () => {
     const changed = makeProfile({
       Username: 'new-name',
+      UsernameDisplay: 'new-name',
       CanChangeUsername: false,
       UsernameChangeAvailableAtUtc: '2026-09-14T12:00:00Z',
     });
@@ -134,7 +143,7 @@ describe('ProfileTabComponent', () => {
 
     component.changeUsername();
 
-    expect(profileService.changeUsername).toHaveBeenCalledOnceWith('new-name');
+    expect(profileService.changeUsername).toHaveBeenCalledOnceWith('NEW-NAME');
     expect(component.profile).toEqual(changed);
     expect(component.usernameChangeRequested).toBeFalse();
     expect(component.success).toContain('@new-name');

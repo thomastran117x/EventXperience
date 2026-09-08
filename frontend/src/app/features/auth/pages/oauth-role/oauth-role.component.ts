@@ -10,6 +10,7 @@ import {
   OAuthRoleSelectionPayload,
   PendingOAuthSignupStorageKey,
   SignupRole,
+  UsernameSuggestion,
 } from '../../services/auth.service';
 import { AuthReturnUrlService } from '../../services/auth-return-url.service';
 import {
@@ -17,14 +18,15 @@ import {
   usernameAvailabilityValidator,
 } from '../../validators/username-availability.validator';
 import {
-  suggestUsernameFromEmail,
+  toUsernameDisplay,
   usernameFormatValidator,
 } from '../../validators/username-format.validator';
+import { UsernameSuggestionsComponent } from '../../components/username-suggestions/username-suggestions.component';
 
 @Component({
   selector: 'app-oauth-role',
   standalone: true,
-  imports: [ReactiveFormsModule, RouterLink],
+  imports: [ReactiveFormsModule, RouterLink, UsernameSuggestionsComponent],
   templateUrl: './oauth-role.component.html',
   styleUrls: ['./oauth-role.component.css'],
 })
@@ -73,6 +75,8 @@ export class OAuthRoleComponent {
   readonly status = signal<'ready' | 'loading' | 'error'>('ready');
   readonly message = signal('Choose how you want to use EventXperience.');
   readonly pending = signal<OAuthRoleSelectionPayload | null>(null);
+  readonly suggestions = signal<UsernameSuggestion[]>([]);
+  readonly suggestionsLoading = signal(false);
 
   submitted = false;
 
@@ -124,13 +128,46 @@ export class OAuthRoleComponent {
       }
 
       this.pending.set(parsed);
-      // A starting point only; the user can replace it, and the probe below decides if it is free.
-      this.form.controls.username.setValue(suggestUsernameFromEmail(parsed.Email));
+      // Deliberately not derived from the email local part any more. Doing so turned the address
+      // into a public handle for anyone who accepted the prefill; a generated name carries nothing
+      // about the account. A starting point only — the user can replace it, and the probe below
+      // decides whether it is actually free.
+      this.loadSuggestions(true);
     } catch {
       sessionStorage.removeItem(PendingOAuthSignupStorageKey);
       this.status.set('error');
       this.message.set('Your OAuth signup session is invalid. Please start again.');
     }
+  }
+
+  /** Which chip, if any, matches what is currently in the field. */
+  normalizedUsername(): string {
+    return normalizeUsername(this.form.controls.username.value);
+  }
+
+  loadSuggestions(prefill = false): void {
+    this.suggestionsLoading.set(true);
+    this.auth.getUsernameSuggestions().subscribe((suggestions) => {
+      this.suggestionsLoading.set(false);
+      this.suggestions.set(suggestions);
+
+      // Only ever fills an untouched, empty field. A user who started typing while the request was
+      // in flight must not have their input replaced underneath them.
+      const control = this.form.controls.username;
+      if (prefill && suggestions.length > 0 && control.pristine && !control.value) {
+        control.setValue(suggestions[0].display);
+      }
+    });
+  }
+
+  /**
+   * Spends an availability probe on purpose: the user just chose this name and should see it
+   * confirmed. The note on submit() is about echoing back a settled value, not a fresh selection.
+   */
+  applySuggestion(suggestion: UsernameSuggestion): void {
+    const control = this.form.controls.username;
+    control.setValue(suggestion.display);
+    control.markAsTouched();
   }
 
   submit(): void {
@@ -153,7 +190,7 @@ export class OAuthRoleComponent {
     // Deliberately not written back into the control: setValue re-runs the async validator and
     // spends a probe from the rate-limit budget, for a value already being sent.
     this.auth
-      .completeOAuthSignup(pending.SignupToken, values.usertype, normalizeUsername(values.username))
+      .completeOAuthSignup(pending.SignupToken, values.usertype, toUsernameDisplay(values.username))
       .subscribe({
         next: async (session) => {
           try {

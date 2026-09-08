@@ -397,6 +397,7 @@ namespace backend.main.features.auth.token
                     Password = payload.Password,
                     Usertype = payload.Usertype,
                     Username = payload.Username,
+                    UsernameDisplay = payload.UsernameDisplay,
                     ExpiresAtUtc = expiresAtUtc,
                 };
 
@@ -529,6 +530,7 @@ namespace backend.main.features.auth.token
                     Password = state.Password,
                     Usertype = state.Usertype,
                     Username = state.Username,
+                    UsernameDisplay = state.UsernameDisplay,
                     Purpose = state.Purpose,
                 });
             }
@@ -921,6 +923,7 @@ namespace backend.main.features.auth.token
                 AuthVersion = user.Id > 0 ? user.AuthVersion : null,
                 Password = purpose == VerificationPurpose.SignUp ? user.Password : null,
                 Username = purpose == VerificationPurpose.SignUp ? user.Username : null,
+                UsernameDisplay = purpose == VerificationPurpose.SignUp ? user.UsernameDisplay : null,
                 Usertype = purpose == VerificationPurpose.SignUp
                     ? AuthRoles.NormalizeStored(user.Usertype)
                     : PlaceholderUsertype,
@@ -965,6 +968,7 @@ namespace backend.main.features.auth.token
                 Email = payload.Email,
                 Password = payload.Password,
                 Username = payload.Username,
+                UsernameDisplay = payload.UsernameDisplay,
                 Usertype = AuthRoles.NormalizeStored(payload.Usertype),
             };
         }
@@ -1148,6 +1152,21 @@ namespace backend.main.features.auth.token
             {
                 get; set;
             }
+
+            /// <summary>
+            /// The casing the user typed at signup, carried so email verification can store it.
+            /// </summary>
+            /// <remarks>
+            /// Deliberately absent from <c>ComputeOtpProof</c>. Adding it would change the HMAC
+            /// input and invalidate every challenge minted before this deployed; it is a
+            /// presentation string with no bearing on what the token authorises, and a payload
+            /// written by the previous version simply deserialises it as null, which
+            /// <c>AuthUserRepository.CreateUserAsync</c> repairs from the username.
+            /// </remarks>
+            public string? UsernameDisplay
+            {
+                get; set;
+            }
             public required string Usertype
             {
                 get; set;
@@ -1197,6 +1216,21 @@ namespace backend.main.features.auth.token
                 get; set;
             }
             public string? Username
+            {
+                get; set;
+            }
+
+            /// <summary>
+            /// The casing the user typed at signup, carried so email verification can store it.
+            /// </summary>
+            /// <remarks>
+            /// Deliberately absent from <c>ComputeOtpProof</c>. Adding it would change the HMAC
+            /// input and invalidate every challenge minted before this deployed; it is a
+            /// presentation string with no bearing on what the token authorises, and a payload
+            /// written by the previous version simply deserialises it as null, which
+            /// <c>AuthUserRepository.CreateUserAsync</c> repairs from the username.
+            /// </remarks>
+            public string? UsernameDisplay
             {
                 get; set;
             }

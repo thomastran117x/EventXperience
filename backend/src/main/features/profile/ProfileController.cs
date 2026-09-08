@@ -82,6 +82,7 @@ namespace backend.main.features.profile
                     new PublicProfileResponse
                     {
                         Username = profile.Username,
+                        UsernameDisplay = profile.UsernameDisplay,
                         Name = profile.Name,
                         Avatar = profile.Avatar,
                         Usertype = profile.Usertype,
@@ -351,6 +352,7 @@ namespace backend.main.features.profile
                 Id = user.Id,
                 Email = user.Email,
                 Username = user.Username ?? string.Empty,
+                UsernameDisplay = user.UsernameDisplay ?? user.Username ?? string.Empty,
                 CanChangeUsername = user.UsernameChangeAvailableAtUtc == null
                     || user.UsernameChangeAvailableAtUtc <= utcNow,
                 UsernameChangeAvailableAtUtc = user.UsernameChangeAvailableAtUtc,

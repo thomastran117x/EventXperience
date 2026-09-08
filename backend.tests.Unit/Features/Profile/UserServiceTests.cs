@@ -141,6 +141,7 @@ public class UserServiceTests
         repository.Setup(repo => repo.ChangeUsernameAsync(
                 3,
                 "new-name",
+                "NEW-NAME",
                 now.UtcDateTime,
                 now.UtcDateTime.AddDays(30)))
             .ReturnsAsync(new UsernameChangeRecord(
@@ -196,6 +197,7 @@ public class UserServiceTests
         var repository = new Mock<IUserRepository>();
         repository.Setup(repo => repo.ChangeUsernameAsync(
                 4,
+                "new-name",
                 "new-name",
                 now.UtcDateTime,
                 now.UtcDateTime.AddDays(30)))

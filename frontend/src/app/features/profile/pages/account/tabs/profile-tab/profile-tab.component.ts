@@ -13,13 +13,16 @@ import {
 import { AuthTokenService } from '../../../../../../core/api/services/auth-token.service';
 import { setUser } from '../../../../../../core/stores/user.actions';
 import { User } from '../../../../../../core/stores/user.model';
-import { AuthService } from '../../../../../auth/services/auth.service';
+import { AuthService, UsernameSuggestion } from '../../../../../auth/services/auth.service';
 import { emailAvailabilityValidator } from '../../../../../auth/validators/email-availability.validator';
 import {
   normalizeUsername,
   usernameAvailabilityValidator,
 } from '../../../../../auth/validators/username-availability.validator';
-import { usernameFormatValidator } from '../../../../../auth/validators/username-format.validator';
+import {
+  toUsernameDisplay,
+  usernameFormatValidator,
+} from '../../../../../auth/validators/username-format.validator';
 import {
   MyProfile,
   PendingEmailChange,
@@ -30,10 +33,18 @@ import { MfaGateComponent } from '../../mfa-gate/mfa-gate.component';
 const MAX_AVATAR_BYTES = 5 * 1024 * 1024;
 const MFA_REQUIRED_ERROR_CODE = 'MFA_REQUIRED';
 
+import { UsernameSuggestionsComponent } from '../../../../../auth/components/username-suggestions/username-suggestions.component';
+
 @Component({
   selector: 'app-profile-tab',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, RouterLink, MfaGateComponent],
+  imports: [
+    CommonModule,
+    ReactiveFormsModule,
+    RouterLink,
+    MfaGateComponent,
+    UsernameSuggestionsComponent,
+  ],
   templateUrl: './profile-tab.component.html',
 })
 export class ProfileTabComponent implements OnInit {
@@ -228,13 +239,40 @@ export class ProfileTabComponent implements OnInit {
       });
   }
 
+  suggestions: UsernameSuggestion[] = [];
+  suggestionsLoading = false;
+
   startUsernameChange(): void {
     if (!this.profile?.CanChangeUsername) return;
     this.usernameChangeRequested = true;
     this.usernameMfaVerified = false;
-    this.usernameForm.setValue({ username: this.profile.Username });
+    this.usernameForm.setValue({
+      username: this.profile.UsernameDisplay || this.profile.Username,
+    });
     this.error = '';
     this.success = '';
+    // Fetched here rather than on tab load, so merely viewing the account page spends nothing
+    // against the rate-limit budget.
+    this.loadSuggestions();
+  }
+
+  loadSuggestions(): void {
+    this.suggestionsLoading = true;
+    this.auth.getUsernameSuggestions().subscribe((suggestions) => {
+      this.suggestionsLoading = false;
+      this.suggestions = suggestions;
+    });
+  }
+
+  /** Spends an availability probe on purpose - the user just chose this name. */
+  applySuggestion(suggestion: UsernameSuggestion): void {
+    this.usernameForm.controls.username.setValue(suggestion.display);
+    this.usernameForm.controls.username.markAsTouched();
+  }
+
+  /** Which chip, if any, matches what is currently in the field. */
+  get normalizedUsername(): string {
+    return normalizeUsername(this.usernameForm.getRawValue().username);
   }
 
   cancelUsernameChange(): void {
@@ -242,7 +280,9 @@ export class ProfileTabComponent implements OnInit {
     this.usernameMfaVerified = false;
     this.error = '';
     if (this.profile) {
-      this.usernameForm.setValue({ username: this.profile.Username });
+      this.usernameForm.setValue({
+        username: this.profile.UsernameDisplay || this.profile.Username,
+      });
     }
   }
 
@@ -254,7 +294,7 @@ export class ProfileTabComponent implements OnInit {
     // Deliberately not written back into the control: setValue re-runs the async validator and
     // spends a probe from the rate-limit budget on every submit. The format validator normalises
     // internally, so a whitespace-only value is still caught without the write-back.
-    const username = normalizeUsername(this.usernameForm.getRawValue().username);
+    const username = toUsernameDisplay(this.usernameForm.getRawValue().username);
     if (this.usernameForm.invalid) {
       this.usernameForm.markAllAsTouched();
       return;
@@ -276,8 +316,10 @@ export class ProfileTabComponent implements OnInit {
           this.syncStore(updated);
           this.usernameChangeRequested = false;
           this.usernameMfaVerified = false;
-          this.usernameForm.setValue({ username: updated.Username });
-          this.success = `Username changed to @${updated.Username}.`;
+          this.usernameForm.setValue({
+            username: updated.UsernameDisplay || updated.Username,
+          });
+          this.success = `Username changed to @${updated.UsernameDisplay || updated.Username}.`;
         },
         error: (err) => {
           if (isApiClientErrorCode(err, MFA_REQUIRED_ERROR_CODE)) {

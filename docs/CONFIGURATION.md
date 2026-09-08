@@ -135,6 +135,16 @@ username budget, because a list of real addresses is far more minable than a use
 that has to be walked. Lower it, or put the endpoint behind a session or form nonce, if account
 enumeration matters more than signup ergonomics in your deployment.
 
+`GET /api/auth/username/suggestions` is anonymous for the same reason — it serves the signup form —
+and carries its own budget, `RateLimiter:UsernameSuggestionsPermitLimit`, defaulting to 10 per
+minute per IP. It is deliberately tighter than the availability probe despite being the *weaker*
+enumeration surface: the caller chooses nothing, so it cannot be used to test a name of interest.
+The limit is about cost, not disclosure. One suggestion request draws a batch of candidates and can
+issue a database query per suffix tier, where an availability probe is a single bloom lookup and at
+most one query. When the bloom feature flag is off, `DisabledBloomFilterRegistry` answers
+`Unavailable` for every lookup, so every candidate reaches the database — the reason the draw is
+checked as one batched query rather than one query per candidate.
+
 Filter membership is never authoritative for a write. Every path that creates or authenticates an
 account queries the database regardless of what the filter says; only read-only probes and the
 pre-flight signup check are allowed to trust a "definitely absent" answer.

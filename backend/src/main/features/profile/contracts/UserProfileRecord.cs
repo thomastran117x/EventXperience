@@ -8,6 +8,11 @@ namespace backend.main.features.profile.contracts
         }
         public string Email { get; init; } = null!;
         public string Username { get; init; } = null!;
+
+        /// <summary>
+        /// The username as its owner wrote it. Presentation only — never look an account up by it.
+        /// </summary>
+        public string UsernameDisplay { get; init; } = null!;
         public string? Name
         {
             get; init;

@@ -15,6 +15,7 @@ describe('ProfileService', () => {
     Id: 1,
     Email: 'member@example.com',
     Username: 'member',
+    UsernameDisplay: 'member',
     CanChangeUsername: true,
     UsernameChangeAvailableAtUtc: null,
     Name: 'Test Member',
@@ -158,6 +159,7 @@ describe('ProfileService', () => {
     request.flush(
       envelope({
         Username: 'jamie',
+        UsernameDisplay: 'jamie',
         Name: 'Jamie',
         Avatar: null,
         Usertype: 'User',

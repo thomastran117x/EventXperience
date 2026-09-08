@@ -35,12 +35,23 @@ export const RESERVED_USERNAMES: ReadonlySet<string> = new Set([
 
 /** The single message covering the charset and placement rules. Mirrors `UsernamePolicy.FormatMessage`. */
 export const USERNAME_FORMAT_HINT =
-  'Username may use only lowercase letters, numbers, and . _ -, ' +
+  'Username may use only letters, numbers, and . _ -, ' +
   'must start and end with a letter or number, and cannot repeat . _ -.';
 
 /** Matches the server-side UsernamePolicy, so the check runs on the value the API will evaluate. */
 export function normalizeUsername(value: string): string {
   return (value ?? '').trim().toLowerCase();
+}
+
+/**
+ * The value a form submits. Trimmed but not lowercased, so the server can keep the casing the user
+ * typed as `UsernameDisplay` while still storing `normalizeUsername(value)` as the lookup key.
+ *
+ * Sending the normalised value instead is what used to throw the capitals away, so a form that
+ * submits `normalizeUsername(...)` silently defeats the display column.
+ */
+export function toUsernameDisplay(value: string): string {
+  return (value ?? '').trim();
 }
 
 function isAlphanumeric(character: string): boolean {
@@ -133,34 +144,3 @@ export const usernameFormatValidator: ValidatorFn = (
   const message = describeUsernameProblem(normalized);
   return message ? { usernameFormat: { message } } : null;
 };
-
-/**
- * A starting username derived from an email local part, for prefilling the OAuth signup step.
- *
- * Returns '' rather than a guess that could not be submitted, so a name we cannot build cleanly
- * leaves the field empty instead of pre-loading it with an error.
- */
-export function suggestUsernameFromEmail(email: string): string {
-  const localPart = (email ?? '').trim().toLowerCase().split('@')[0] ?? '';
-
-  let suggestion = '';
-  for (const character of localPart) {
-    if (isAlphanumeric(character)) {
-      suggestion += character;
-      continue;
-    }
-
-    // Collapse runs of separators, and never open with one.
-    if (isSeparator(character) && suggestion.length > 0 && !isSeparator(suggestion.slice(-1))) {
-      suggestion += character;
-    }
-  }
-
-  // Leave room under the cap for the disambiguating suffix a user is likely to add.
-  suggestion = suggestion.slice(0, 30);
-  while (suggestion.length > 0 && isSeparator(suggestion.slice(-1))) {
-    suggestion = suggestion.slice(0, -1);
-  }
-
-  return isValidUsernameFormat(suggestion) ? suggestion : '';
-}

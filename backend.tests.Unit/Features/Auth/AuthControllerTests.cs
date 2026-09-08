@@ -1,4 +1,5 @@
 using backend.main.features.auth;
+using backend.main.features.profile.suggestions;
 using backend.main.features.bloom;
 using backend.main.features.auth.captcha;
 using backend.main.features.auth.contracts.requests;
@@ -721,6 +722,7 @@ public class AuthControllerTests
         var controller = new AuthController(
             authService.Object,
             new UsernameAvailabilityService(new Mock<IAuthUserRepository>().Object, new DisabledBloomFilterRegistry()),
+            new Mock<IUsernameSuggestionService>().Object,
             emailAvailability?.Object
                 ?? new EmailAvailabilityService(
                     new Mock<IAuthUserRepository>().Object,

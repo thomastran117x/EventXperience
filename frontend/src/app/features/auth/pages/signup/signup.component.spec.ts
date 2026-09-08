@@ -21,7 +21,14 @@ describe('SignupComponent email availability', () => {
       'signup',
       'checkUsernameAvailability',
       'checkEmailAvailability',
+      'getUsernameSuggestions',
     ]);
+    auth.getUsernameSuggestions.and.returnValue(
+      of([
+        { username: 'smartcat23', display: 'SmartCat23' },
+        { username: 'braveotter47', display: 'BraveOtter47' },
+      ]),
+    );
     auth.checkUsernameAvailability.and.returnValue(
       of({ username: 'ada', available: true } as UsernameAvailabilityResponse),
     );
@@ -131,7 +138,14 @@ describe('SignupComponent username format', () => {
       'signup',
       'checkUsernameAvailability',
       'checkEmailAvailability',
+      'getUsernameSuggestions',
     ]);
+    auth.getUsernameSuggestions.and.returnValue(
+      of([
+        { username: 'smartcat23', display: 'SmartCat23' },
+        { username: 'braveotter47', display: 'BraveOtter47' },
+      ]),
+    );
     auth.checkUsernameAvailability.and.returnValue(
       of({ username: 'ada', available: true } as UsernameAvailabilityResponse),
     );
@@ -199,5 +213,16 @@ describe('SignupComponent username format', () => {
     tick();
 
     expect(auth.signup).not.toHaveBeenCalled();
+  }));
+
+  it('fills the username field from a suggestion chip', fakeAsync(() => {
+    enterUsername('');
+    component.applySuggestion({ username: 'smartcat23', display: 'SmartCat23' });
+    tick(400);
+    fixture.detectChanges();
+
+    // The display form goes into the field; the async validator normalises before probing.
+    expect(component.form.controls.username.value).toBe('SmartCat23');
+    expect(auth.checkUsernameAvailability).toHaveBeenCalledWith('smartcat23');
   }));
 });

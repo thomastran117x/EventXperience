@@ -1,6 +1,6 @@
 import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { of, throwError } from 'rxjs';
+import { of, throwError, Subject } from 'rxjs';
 
 import { ApiClientClientError } from '../../../../core/api/models/api-client-error.model';
 import { AuthenticatedSessionResponse } from '../../../../core/models/auth-response.model';
@@ -41,8 +41,15 @@ describe('OAuthRoleComponent', () => {
     auth = jasmine.createSpyObj<AuthService>('AuthService', [
       'completeOAuthSignup',
       'checkUsernameAvailability',
+      'getUsernameSuggestions',
     ]);
     auth.checkUsernameAvailability.and.returnValue(of({ username: '', available: true }));
+    auth.getUsernameSuggestions.and.returnValue(
+      of([
+        { username: 'smartcat23', display: 'SmartCat23' },
+        { username: 'braveotter47', display: 'BraveOtter47' },
+      ]),
+    );
     auth.completeOAuthSignup.and.returnValue(of(makeSession()));
 
     sessionManager = jasmine.createSpyObj<SessionManagerService>('SessionManagerService', [
@@ -69,18 +76,60 @@ describe('OAuthRoleComponent', () => {
 
   afterEach(() => sessionStorage.clear());
 
-  it('prefills a username derived from the provider email', fakeAsync(() => {
+  it('prefills the first generated suggestion rather than anything derived from the email', fakeAsync(() => {
     stashPending();
 
     fixture.detectChanges();
     tick(400);
 
-    expect(component.form.controls.username.value).toBe('ada.lovelace');
-    expect(auth.checkUsernameAvailability).toHaveBeenCalledWith('ada.lovelace');
+    // The email local part must not become a public handle: ada.lovelace@example.com used to be
+    // prefilled as 'ada.lovelace'.
+    expect(component.form.controls.username.value).toBe('SmartCat23');
+    expect(component.form.controls.username.value).not.toContain('ada');
+    expect(auth.checkUsernameAvailability).toHaveBeenCalledWith('smartcat23');
   }));
 
-  it('leaves the field empty when no usable name can be derived from the email', fakeAsync(() => {
+  it('never overwrites a username the user has already started typing', fakeAsync(() => {
+    stashPending();
+    const suggestions = new Subject<{ username: string; display: string }[]>();
+    auth.getUsernameSuggestions.and.returnValue(suggestions.asObservable());
+
+    fixture.detectChanges();
+    component.form.controls.username.setValue('my-own-name');
+    component.form.controls.username.markAsDirty();
+    suggestions.next([{ username: 'smartcat23', display: 'SmartCat23' }]);
+    suggestions.complete();
+    tick(400);
+
+    expect(component.form.controls.username.value).toBe('my-own-name');
+  }));
+
+  it('fills the field from a chip and lets the probe confirm it', fakeAsync(() => {
+    stashPending();
+    fixture.detectChanges();
+    tick(400);
+
+    component.applySuggestion({ username: 'braveotter47', display: 'BraveOtter47' });
+    tick(400);
+
+    expect(component.form.controls.username.value).toBe('BraveOtter47');
+    expect(auth.checkUsernameAvailability).toHaveBeenCalledWith('braveotter47');
+  }));
+
+  it('still offers a name when the email could never have produced one', fakeAsync(() => {
+    // 'ab' is below the 3-character minimum, so the old email-derived prefill left this empty and
+    // the user faced a blank required field. A generated name does not depend on the address.
     stashPending('ab@example.com');
+
+    fixture.detectChanges();
+    tick(400);
+
+    expect(component.form.controls.username.value).toBe('SmartCat23');
+  }));
+
+  it('leaves the field empty when the draw comes back with nothing', fakeAsync(() => {
+    auth.getUsernameSuggestions.and.returnValue(of([]));
+    stashPending();
 
     fixture.detectChanges();
     tick(400);
@@ -89,7 +138,7 @@ describe('OAuthRoleComponent', () => {
     expect(auth.checkUsernameAvailability).not.toHaveBeenCalled();
   }));
 
-  it('sends the normalized username with the role', fakeAsync(() => {
+  it('sends the username with its casing intact, so the server can store a display form', fakeAsync(() => {
     stashPending();
     fixture.detectChanges();
     component.form.controls.username.setValue('  Ada_Lovelace  ');
@@ -102,7 +151,7 @@ describe('OAuthRoleComponent', () => {
     expect(auth.completeOAuthSignup).toHaveBeenCalledWith(
       'signup-token',
       'organizer',
-      'ada_lovelace',
+      'Ada_Lovelace',
     );
   }));
 

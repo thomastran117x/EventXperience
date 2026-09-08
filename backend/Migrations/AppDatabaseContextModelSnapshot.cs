@@ -1463,6 +1463,10 @@ namespace backend.Migrations
                     b.Property<DateTime?>("UsernameChangeAvailableAtUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("UsernameDisplay")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
                     b.Property<string>("Usertype")
                         .IsRequired()
                         .HasColumnType("text");

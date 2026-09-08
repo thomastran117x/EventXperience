@@ -14527,6 +14527,58 @@
         }
       }
     },
+    "/api/auth/username/suggestions": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Suggest usernames",
+        "description": "Anonymous for the same reason the availability probe is: it serves the signup form,\r\nwhere there is no session yet. The account rename form reuses it rather than having an\r\nauthenticated twin — the answer depends on nothing about the caller, and a user's own\r\ncurrent name already reads as unavailable, so it can never be suggested back to them.\r\n\r\nAdvisory, exactly like the probe next to it. Nothing here is reserved: two callers can\r\nbe handed the same name in the same moment, and a name offered here can be claimed\r\nbefore it is submitted. The unique index is what decides.\r\n\r\nA short list, or an empty one, is a normal response rather than an error. Suggestions\r\ndecorate a form that works without them, so an exhausted draw must degrade to no chips\r\ninstead of failing a signup.",
+        "operationId": "Auth_SuggestUsernames_get",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOfUsernameSuggestionsResponse"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOfUsernameSuggestionsResponse"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOfUsernameSuggestionsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request, validation failure, or CSRF failure.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOfObject"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponseOfObject"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/auth/email/availability": {
       "get": {
         "tags": [
@@ -22132,6 +22184,48 @@
         },
         "description": "Standard JSON envelope returned by all API endpoints."
       },
+      "ApiResponseOfUsernameSuggestionsResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "description": "Indicates whether the request succeeded.",
+            "$ref": "#/components/schemas/Boolean"
+          },
+          "message": {
+            "description": "Human-readable message summarizing the outcome.",
+            "$ref": "#/components/schemas/String"
+          },
+          "data": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "description": "Endpoint-specific response payload.",
+                "$ref": "#/components/schemas/UsernameSuggestionsResponse"
+              }
+            ],
+            "description": "Endpoint-specific response payload. `null` on error responses."
+          },
+          "error": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "description": "Structured error details when the request fails.",
+                "$ref": "#/components/schemas/ApiError"
+              }
+            ],
+            "description": "Structured error details. Present only when `success` is `false`."
+          },
+          "meta": {
+            "description": "Optional metadata such as pagination or response source details.",
+            "$ref": "#/components/schemas/Object"
+          }
+        },
+        "description": "Standard JSON envelope returned by all API endpoints."
+      },
       "ApiResponseOfUserStatusResponse": {
         "type": "object",
         "properties": {
@@ -24406,6 +24500,10 @@
             "$ref": "#/components/schemas/String"
           },
           "username": {
+            "$ref": "#/components/schemas/String"
+          },
+          "usernameDisplay": {
+            "description": "The username as its owner wrote it, e.g. `ThomasT`. Render this; resolve by\r\n`Username`.",
             "$ref": "#/components/schemas/String"
           },
           "name": {
@@ -27080,6 +27178,12 @@
           "$ref": "#/components/schemas/String"
         }
       },
+      "IReadOnlyListOfUsernameSuggestionResponse": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/UsernameSuggestionResponse"
+        }
+      },
       "JoinWaitlistRequest": {
         "type": "object",
         "properties": {
@@ -27700,6 +27804,10 @@
             "$ref": "#/components/schemas/String"
           },
           "username": {
+            "$ref": "#/components/schemas/String"
+          },
+          "usernameDisplay": {
+            "description": "The username as its owner wrote it, e.g. `ThomasT`. Render this; resolve by\r\n`Username`.",
             "$ref": "#/components/schemas/String"
           },
           "canChangeUsername": {
@@ -28597,6 +28705,10 @@
           "username": {
             "$ref": "#/components/schemas/String"
           },
+          "usernameDisplay": {
+            "description": "The username as its owner wrote it, e.g. `ThomasT`. Render this; resolve by\r\n`Username`.",
+            "$ref": "#/components/schemas/String"
+          },
           "name": {
             "oneOf": [
               {
@@ -29352,6 +29464,37 @@
             "$ref": "#/components/schemas/String"
           }
         }
+      },
+      "UsernameSuggestionResponse": {
+        "required": [
+          "username",
+          "display"
+        ],
+        "type": "object",
+        "properties": {
+          "username": {
+            "description": "The normalised, claimable form, e.g. `smartcat23`.",
+            "$ref": "#/components/schemas/String"
+          },
+          "display": {
+            "description": "The same name as it should be rendered, e.g. `SmartCat23`.",
+            "$ref": "#/components/schemas/String"
+          }
+        },
+        "description": "One suggested username, in both the form that is claimed and the form that is shown."
+      },
+      "UsernameSuggestionsResponse": {
+        "required": [
+          "suggestions"
+        ],
+        "type": "object",
+        "properties": {
+          "suggestions": {
+            "description": "The suggestions, free at the moment they were drawn. May hold fewer than the usual three,\r\nor none: suggestions are a convenience, so an exhausted draw returns a short list rather\r\nthan failing the request, and the form works without them.",
+            "$ref": "#/components/schemas/IReadOnlyListOfUsernameSuggestionResponse"
+          }
+        },
+        "description": "A batch of suggested usernames for the signup and rename forms."
       },
       "UserStatusResponse": {
         "type": "object",

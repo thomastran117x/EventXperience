@@ -7,7 +7,7 @@ import {
   isValidUsernameFormat,
   isWellFormedUsername,
   normalizeUsername,
-  suggestUsernameFromEmail,
+  toUsernameDisplay,
   usernameFormatValidator,
 } from './username-format.validator';
 
@@ -123,39 +123,23 @@ describe('usernameFormatValidator', () => {
   });
 });
 
-describe('suggestUsernameFromEmail', () => {
-  it('lowercases and keeps the legal characters of the local part', () => {
-    expect(suggestUsernameFromEmail('Ada.Lovelace@example.com')).toBe('ada.lovelace');
+describe('toUsernameDisplay', () => {
+  it('trims but does not lowercase, so the server can keep the casing', () => {
+    expect(toUsernameDisplay('  ThomasT  ')).toBe('ThomasT');
+    expect(toUsernameDisplay('SmartCat23')).toBe('SmartCat23');
   });
 
-  it('collapses runs of separators and trims them from the edges', () => {
-    expect(suggestUsernameFromEmail('..ada..lovelace..@example.com')).toBe('ada.lovelace');
+  it('normalises to the same value the availability probe uses', () => {
+    expect(normalizeUsername(toUsernameDisplay('  ThomasT  '))).toBe('thomast');
+  });
+});
+
+describe('mixed case', () => {
+  it('accepts capitals, which the validator has always normalised away rather than rejected', () => {
+    expect(describeUsernameProblem(normalizeUsername('ThomasT'))).toBeNull();
   });
 
-  it('drops characters that are not legal in a username', () => {
-    expect(suggestUsernameFromEmail('ada+tag@example.com')).toBe('adatag');
-  });
-
-  it('truncates a long local part without leaving a trailing separator', () => {
-    expect(suggestUsernameFromEmail(`${'a'.repeat(30)}.tail@example.com`)).toBe('a'.repeat(30));
-  });
-
-  // A guess that could not be submitted would prefill the field with an error, so return nothing.
-  it('treats a missing address as empty', () => {
-    expect(suggestUsernameFromEmail(undefined as unknown as string)).toBe('');
-  });
-
-  it('returns an empty string when no usable name can be derived', () => {
-    expect(suggestUsernameFromEmail('ab@example.com')).toBe('');
-    expect(suggestUsernameFromEmail('..@example.com')).toBe('');
-    expect(suggestUsernameFromEmail('admin@example.com')).toBe('');
-    expect(suggestUsernameFromEmail('')).toBe('');
-  });
-
-  it('produces a value the format validator accepts', () => {
-    const suggestion = suggestUsernameFromEmail('Grace.Hopper@example.com');
-
-    expect(suggestion).not.toBe('');
-    expect(isValidUsernameFormat(normalizeUsername(suggestion))).toBeTrue();
+  it('no longer tells the user their username must be lowercase', () => {
+    expect(USERNAME_FORMAT_HINT).not.toContain('lowercase');
   });
 });

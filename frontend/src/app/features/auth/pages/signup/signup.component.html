@@ -210,6 +210,14 @@
               } @else if (submitted && form.controls['username'].invalid) {
                 <div class="mt-2 text-sm text-danger">A username is required.</div>
               }
+
+              <app-username-suggestions
+                [suggestions]="suggestions()"
+                [loading]="suggestionsLoading()"
+                [selected]="normalizedUsername()"
+                (pick)="applySuggestion($event)"
+                (shuffle)="loadSuggestions()"
+              />
             </div>
 
             <div>
