@@ -10,6 +10,8 @@ export interface CurrentUserResponse {
   Id: number;
   Email: string;
   Username: string;
+  /** The username as its owner wrote it. Render this; resolve and link by `Username`. */
+  UsernameDisplay: string;
   Name?: string | null;
   Avatar?: string | null;
   Usertype: string;
@@ -104,6 +106,10 @@ export function normalizeCurrentUserResponse(value: unknown): CurrentUserRespons
     return null;
   }
 
+  // Accounts created before the display column, and any payload from an older server, carry no
+  // display form; the lookup key is the correct fallback and is what used to be rendered.
+  const usernameDisplay =
+    readNullableString(source, 'UsernameDisplay', 'usernameDisplay') || username;
   const name = readNullableString(source, 'Name', 'name');
   const avatar = readNullableString(source, 'Avatar', 'avatar');
 
@@ -111,6 +117,7 @@ export function normalizeCurrentUserResponse(value: unknown): CurrentUserRespons
     Id: id,
     Email: email,
     Username: username,
+    UsernameDisplay: usernameDisplay,
     Name: name ?? undefined,
     Avatar: avatar ?? undefined,
     Usertype: usertype,

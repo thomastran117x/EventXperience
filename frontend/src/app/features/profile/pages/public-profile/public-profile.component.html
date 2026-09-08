@@ -36,13 +36,13 @@
         class="mx-auto flex h-28 w-28 items-center justify-center rounded-full bg-accent/20 text-3xl font-bold text-accent"
       >
         <ng-container *ngIf="p.Avatar; else initialsAvatar">
-          <img [src]="p.Avatar" [alt]="p.Username" class="h-28 w-28 rounded-full object-cover" />
+          <img [src]="p.Avatar" [alt]="p.UsernameDisplay || p.Username" class="h-28 w-28 rounded-full object-cover" />
         </ng-container>
         <ng-template #initialsAvatar>{{ userInitials }}</ng-template>
       </div>
 
-      <h1 class="mt-6 text-3xl font-black tracking-tight">{{ p.Name || p.Username }}</h1>
-      <p class="mt-1 text-sm text-subtle">&#64;{{ p.Username }}</p>
+      <h1 class="mt-6 text-3xl font-black tracking-tight">{{ p.Name || p.UsernameDisplay || p.Username }}</h1>
+      <p class="mt-1 text-sm text-subtle">&#64;{{ p.UsernameDisplay || p.Username }}</p>
 
       <div class="mt-4 flex items-center justify-center">
         <span class="rounded-full bg-accent/10 px-4 py-1.5 text-xs font-semibold text-accent">

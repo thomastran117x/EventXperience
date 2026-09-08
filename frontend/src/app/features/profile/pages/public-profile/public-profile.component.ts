@@ -59,7 +59,7 @@ export class PublicProfileComponent implements OnInit {
   }
 
   get userInitials(): string {
-    const name = this.profile?.Name || this.profile?.Username || '';
+    const name = this.profile?.Name || this.profile?.UsernameDisplay || this.profile?.Username || '';
     return name ? name.slice(0, 2).toUpperCase() : '?';
   }
 

@@ -282,6 +282,7 @@ namespace backend.main.features.auth
                     Usertype = AuthRoles.NormalizeStored(u.Usertype),
                     Name = u.Name,
                     Username = u.Username,
+                    UsernameDisplay = u.UsernameDisplay,
                     UsernameChangeAvailableAtUtc = u.UsernameChangeAvailableAtUtc,
                     Avatar = u.Avatar,
                     Address = u.Address,

@@ -81,6 +81,7 @@ describe('normalizeCurrentUserResponse', () => {
     Id: 7,
     Email: 'member@example.com',
     Username: 'member',
+    UsernameDisplay: 'member',
     Usertype: 'User',
   };
 
@@ -89,6 +90,7 @@ describe('normalizeCurrentUserResponse', () => {
       Id: 7,
       Email: 'member@example.com',
       Username: 'member',
+      UsernameDisplay: 'member',
       Name: undefined,
       Avatar: undefined,
       Usertype: 'User',
@@ -109,6 +111,7 @@ describe('normalizeCurrentUserResponse', () => {
       Id: 7,
       Email: 'member@example.com',
       Username: 'member',
+      UsernameDisplay: 'member',
       Name: 'Test Member',
       Avatar: 'https://example.com/a.png',
       Usertype: 'User',

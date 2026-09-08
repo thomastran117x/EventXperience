@@ -494,6 +494,7 @@ export class ProfileTabComponent implements OnInit {
       Id: profile.Id,
       Email: profile.Email,
       Username: profile.Username,
+      UsernameDisplay: profile.UsernameDisplay || profile.Username,
       Name: profile.Name ?? null,
       Avatar: profile.Avatar ?? null,
       Usertype: profile.Usertype,

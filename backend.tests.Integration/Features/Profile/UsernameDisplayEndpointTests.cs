@@ -103,9 +103,15 @@ public class UsernameDisplayEndpointTests
         await using var app = await AuthApiTestApp.CreateAsync();
         await app.SignUpAndVerifyByTokenAsync("display-login@example.com", username: "ThomasT");
 
+        // Signing up does not register a trusted device, and an unknown one is met with a step-up
+        // challenge rather than a session — so seed one, as every other login test here does.
+        var user = await app.FindUserByEmailAsync("display-login@example.com");
+        user.Should().NotBeNull();
+        await app.SeedKnownDeviceAsync(user!.Id, "display-login-device");
+
         // LoginApiAsync asserts a 200 and an authenticated payload internally, so reaching a
         // session at all is the assertion here.
-        var session = await app.LoginApiAsync("THOMAST");
+        var session = await app.LoginApiAsync("THOMAST", trustedDeviceToken: "display-login-device");
 
         session.AccessToken.Should().NotBeNullOrEmpty();
     }

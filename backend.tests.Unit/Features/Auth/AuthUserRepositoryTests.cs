@@ -564,6 +564,75 @@ public class AuthUserRepositoryTests
         (await harness.Repository.EmailExistsAsync("missing@example.com")).Should().BeFalse();
     }
 
+    /// <summary>
+    /// GetUserAsync hand-projects a sanitised User rather than returning the tracked entity, so any
+    /// column added to the table has to be added here too. Missing this is invisible on the write
+    /// path — the row is stored correctly — and only shows up as the display form reverting to the
+    /// lowercase key on every read, which is exactly what shipped before this test existed.
+    /// </summary>
+    [Fact]
+    public async Task GetUserAsync_ShouldProjectTheDisplayForm()
+    {
+        await using var harness = await AuthUserRepositoryHarness.CreateAsync();
+        var created = await harness.Repository.CreateUserAsync(new User
+        {
+            Email = "projected@example.com",
+            Username = "ThomasT",
+            Password = "hashed-password",
+            Usertype = "participant"
+        });
+
+        var fetched = await harness.Repository.GetUserAsync(created.Id);
+
+        fetched.Should().NotBeNull();
+        fetched!.Username.Should().Be("thomast");
+        fetched.UsernameDisplay.Should().Be("ThomasT");
+    }
+
+    /// <summary>
+    /// The choke point: every account creation passes through here, so a caller that supplies no
+    /// display form — a signup stashed in a verification token before the column existed — still
+    /// lands a row satisfying Normalize(display) == Username.
+    /// </summary>
+    [Fact]
+    public async Task CreateUserAsync_ShouldFillADisplayTheCallerOmitted()
+    {
+        await using var harness = await AuthUserRepositoryHarness.CreateAsync();
+
+        var created = await harness.Repository.CreateUserAsync(new User
+        {
+            Email = "no-display@example.com",
+            Username = "PlainName",
+            UsernameDisplay = null,
+            Password = "hashed-password",
+            Usertype = "participant"
+        });
+
+        created.Username.Should().Be("plainname");
+        created.UsernameDisplay.Should().Be("PlainName");
+    }
+
+    /// <summary>
+    /// A display that does not lowercase to the username is corruption, not a rename, so it is
+    /// replaced rather than trusted.
+    /// </summary>
+    [Fact]
+    public async Task CreateUserAsync_ShouldReplaceADisplayThatDoesNotMatchTheUsername()
+    {
+        await using var harness = await AuthUserRepositoryHarness.CreateAsync();
+
+        var created = await harness.Repository.CreateUserAsync(new User
+        {
+            Email = "mismatch@example.com",
+            Username = "realname",
+            UsernameDisplay = "SomethingElse",
+            Password = "hashed-password",
+            Usertype = "participant"
+        });
+
+        created.UsernameDisplay.Should().Be("realname");
+    }
+
     private sealed class AuthUserRepositoryHarness : IAsyncDisposable
     {
         private readonly SqliteConnection _connection;
