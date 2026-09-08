@@ -22,6 +22,7 @@ describe('ProfileService', () => {
     Usertype: 'User',
     Phone: null,
     Address: null,
+    HasLocalPassword: true,
     GoogleLinked: false,
     MicrosoftLinked: false,
     CreatedAtUtc: '2026-01-01T00:00:00Z',

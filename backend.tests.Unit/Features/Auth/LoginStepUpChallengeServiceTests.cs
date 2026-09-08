@@ -85,6 +85,78 @@ public class LoginStepUpChallengeServiceTests
         result!.ReturnPath.Should().Be("/dashboard");
     }
 
+    /// <summary>
+    /// A challenge that outlives a global sign-out must not still mint a session.
+    /// </summary>
+    /// <remarks>
+    /// Revoking sessions cannot reach a challenge that is mid-flight, because it does not hold a
+    /// session yet — it holds a claim on being about to get one. So a password or email change
+    /// that signed every device out would otherwise be followed by whoever had already passed the
+    /// password check completing their challenge into a brand new session. The stamped auth
+    /// version is what closes that window.
+    /// </remarks>
+    [Fact]
+    public async Task TryVerifyEmailAsync_ShouldRefuse_WhenTheAccountWasSignedOutMidChallenge()
+    {
+        var mfaRepo = new Mock<IMfaEnrollmentRepository>();
+        mfaRepo.Setup(r => r.GetByUserIdAsync(5)).ReturnsAsync((SmsMfaEnrollment?)null);
+
+        var user = new TestUserBuilder().WithId(5).WithEmail("user@example.com").Build();
+
+        // The account as it stands when the challenge is finally completed: something
+        // security-sensitive has happened since, so the auth version has moved on.
+        var reloaded = new TestUserBuilder().WithId(5).WithEmail("changed@example.com").Build();
+        reloaded.AuthVersion = user.AuthVersion + 1;
+
+        var userRepository = new Mock<IAuthUserRepository>();
+        userRepository.Setup(r => r.GetUserAsync(5)).ReturnsAsync(reloaded);
+
+        var deviceTrustService = new Mock<IDeviceTrustService>();
+        deviceTrustService
+            .Setup(d => d.TrustAsync(
+                It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string>(),
+                It.IsAny<string>(), It.IsAny<string>()))
+            .Returns(Task.CompletedTask);
+
+        var authSessionService = new Mock<IAuthSessionService>();
+        authSessionService
+            .Setup(s => s.IssueAsync(
+                It.IsAny<User>(), It.IsAny<SessionTransport>(),
+                It.IsAny<string?>(), It.IsAny<bool?>()))
+            .ReturnsAsync(CreateUserToken(user));
+
+        var cache = new InMemoryCacheService();
+        var notifications = new Mock<IAuthNotificationService>();
+        string? capturedToken = null;
+        notifications
+            .Setup(n => n.SendDeviceVerificationAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()))
+            .Callback<string, string, string?>((_, token, _) => capturedToken = token)
+            .Returns(Task.CompletedTask);
+
+        var service = CreateService(
+            cache,
+            notifications,
+            mfaRepo,
+            deviceTrustService: deviceTrustService,
+            userRepository: userRepository,
+            authSessionService: authSessionService);
+
+        var challenge = await service.CreateChallengeAsync(
+            user, SessionTransport.ApiToken, false, "/dashboard");
+        await service.StartAsync(challenge.Challenge, "email");
+
+        var act = () => service.TryVerifyEmailAsync(capturedToken!);
+
+        await act.Should().ThrowAsync<UnauthorizedException>()
+            .WithMessage("*no longer valid*");
+        authSessionService.Verify(
+            s => s.IssueAsync(
+                It.IsAny<User>(), It.IsAny<SessionTransport>(),
+                It.IsAny<string?>(), It.IsAny<bool?>()),
+            Times.Never);
+    }
+
     [Fact]
     public async Task StartAsync_ShouldSendSmsCode_AndReturnNewChallenge()
     {

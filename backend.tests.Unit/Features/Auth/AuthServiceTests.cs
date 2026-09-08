@@ -371,8 +371,21 @@ public class AuthServiceTests
         deviceService.Verify(s => s.EnsureDeviceKnownAsync(9, "existing@example.com", It.IsAny<backend.main.shared.requests.ClientRequestInfo>(), It.IsAny<string?>()), Times.Once);
     }
 
+    /// <summary>
+    /// The provider id wins when the two lookups disagree.
+    /// </summary>
+    /// <remarks>
+    /// This used to throw a conflict, which was safe only while an account's address could never
+    /// diverge from the address its provider reports — linking only ever happened on an email
+    /// match. Email changes make divergence ordinary: the account keeps the provider link, the
+    /// provider keeps reporting the old address, and the moment anyone claims that released
+    /// address the two lookups disagree forever. Throwing there would permanently lock out an
+    /// account whose only sign-in method this is. Signing in as the provider-linked account is
+    /// also simply the right answer: the caller proved control of that provider identity, and the
+    /// other account merely happens to hold an address the provider still remembers.
+    /// </remarks>
     [Fact]
-    public async Task GoogleAsync_ShouldRejectConflictingProviderAndEmailUsers()
+    public async Task GoogleAsync_ShouldPreferTheProviderLink_WhenAnotherAccountHoldsThatAddress()
     {
         var userRepository = new Mock<IAuthUserRepository>();
         userRepository.Setup(repository => repository.GetOAuthByGoogleIdAsync("google-1"))
@@ -397,12 +410,28 @@ public class AuthServiceTests
         oauthService.Setup(service => service.VerifyGoogleTokenAsync("google-token", null))
             .ReturnsAsync(new OAuthUser("google-1", "existing@example.com", "Existing User", "google"));
 
-        var service = CreateService(userRepository: userRepository, oauthService: oauthService);
+        var authSessionService = CreateAuthSessionServiceForUser(new backend.main.features.profile.User
+        {
+            Id = 1,
+            Email = "provider@example.com",
+            Usertype = "Participant",
+            GoogleID = "google-1"
+        });
+        var service = CreateService(
+            userRepository: userRepository,
+            oauthService: oauthService,
+            authSessionService: authSessionService);
 
-        var act = () => service.GoogleAsync("google-token", SessionTransport.BrowserCookie);
+        var result = await service.GoogleAsync("google-token", SessionTransport.BrowserCookie);
 
-        await act.Should().ThrowAsync<ConflictException>()
-            .WithMessage("This Google account is already linked to another user.");
+        result.UserToken.Should().NotBeNull();
+        result.UserToken!.user.Id.Should().Be(1);
+        result.UserToken.user.Email.Should().Be("provider@example.com");
+
+        // The account holding the address is left entirely alone.
+        userRepository.Verify(
+            repository => repository.UpdateProviderIdsAsync(2, It.IsAny<string?>(), It.IsAny<string?>()),
+            Times.Never);
     }
 
     [Fact]

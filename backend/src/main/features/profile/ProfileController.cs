@@ -359,6 +359,7 @@ namespace backend.main.features.profile
                 Usertype = user.Usertype,
                 Phone = user.Phone,
                 Address = user.Address,
+                HasLocalPassword = user.HasLocalPassword,
                 GoogleLinked = !string.IsNullOrEmpty(user.GoogleID),
                 MicrosoftLinked = !string.IsNullOrEmpty(user.MicrosoftID),
                 CreatedAtUtc = user.CreatedAt,

@@ -100,8 +100,9 @@ export class ProfileTabComponent implements OnInit {
   }
 
   get requiresPasswordForEmailChange(): boolean {
-    // An OAuth-only account has no password to prove; MFA step-up is the whole gate.
-    return !!this.profile && !this.profile.GoogleLinked && !this.profile.MicrosoftLinked;
+    // Driven by whether a password exists, not by whether a provider is linked: an account can
+    // have both, and the API asks for the password whenever it has one to check.
+    return !!this.profile && this.profile.HasLocalPassword;
   }
 
   get usertypeLabel(): string {

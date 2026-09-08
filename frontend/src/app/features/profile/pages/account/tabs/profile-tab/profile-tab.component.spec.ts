@@ -25,6 +25,7 @@ function makeProfile(overrides: Partial<MyProfile> = {}): MyProfile {
     Usertype: 'Participant',
     Phone: null,
     Address: null,
+    HasLocalPassword: true,
     GoogleLinked: false,
     MicrosoftLinked: false,
     CreatedAtUtc: '2026-01-01T00:00:00Z',
@@ -305,8 +306,10 @@ describe('ProfileTabComponent', () => {
     });
 
     // An OAuth-only account has no password to prove.
-    it('omits the password when the account signs in through a provider', () => {
-      profileService.getMyProfile.and.returnValue(of(makeProfile({ GoogleLinked: true })));
+    it('omits the password when the account has none', () => {
+      profileService.getMyProfile.and.returnValue(
+        of(makeProfile({ HasLocalPassword: false, GoogleLinked: true })),
+      );
       fixture = TestBed.createComponent(ProfileTabComponent);
       component = fixture.componentInstance;
       fixture.detectChanges();
@@ -319,6 +322,31 @@ describe('ProfileTabComponent', () => {
       component.requestEmailChange();
 
       expect(profileService.requestEmailChange).toHaveBeenCalledWith('new@example.com', undefined);
+    });
+
+    it('still asks for the password when a provider is linked to a password account', () => {
+      profileService.getMyProfile.and.returnValue(
+        of(makeProfile({ HasLocalPassword: true, GoogleLinked: true })),
+      );
+      const linked = TestBed.createComponent(ProfileTabComponent);
+      linked.detectChanges();
+      const instance = linked.componentInstance;
+
+      profileService.requestEmailChange.and.returnValue(of(challenge));
+      instance.startEmailChange();
+      instance.emailMfaVerified = true;
+      instance.emailForm.patchValue({
+        newEmail: 'new@example.com',
+        currentPassword: 'Password123!',
+      });
+
+      instance.requestEmailChange();
+
+      expect(instance.requiresPasswordForEmailChange).toBeTrue();
+      expect(profileService.requestEmailChange).toHaveBeenCalledWith(
+        'new@example.com',
+        'Password123!',
+      );
     });
 
     it('returns to the step-up gate when the server says verification expired', () => {

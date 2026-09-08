@@ -36,6 +36,14 @@ namespace backend.main.features.profile.contracts.responses
         {
             get; set;
         }
+        /// <summary>
+        /// True when the account has its own password. Independent of the provider flags: linking
+        /// Google or Microsoft to an existing account leaves its password in place.
+        /// </summary>
+        public bool HasLocalPassword
+        {
+            get; set;
+        }
         public bool GoogleLinked
         {
             get; set;

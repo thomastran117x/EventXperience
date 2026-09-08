@@ -249,6 +249,7 @@ namespace backend.main.features.auth
                     Id = u.Id,
                     Email = u.Email,
                     Password = null,
+                    HasLocalPassword = u.Password != null,
                     Usertype = AuthRoles.NormalizeStored(u.Usertype),
                     Name = u.Name,
                     Username = u.Username,

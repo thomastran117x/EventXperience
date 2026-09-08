@@ -82,6 +82,7 @@ namespace backend.main.features.auth.stepup
                     PendingId = CreateRandomToken(),
                     ChallengeHash = CryptoHelper.HashToken(rawChallenge),
                     UserId = user.Id,
+                    AuthVersion = user.AuthVersion,
                     Email = user.Email,
                     PhoneNumber = CanUseSms(smsEnrollment) ? smsEnrollment!.PhoneNumber : null,
                     HasTotp = totpEnrollment?.IsTotpMfaEnabled == true && EnvironmentSetting.AuthTotpMfaStepUpEnabled,
@@ -354,6 +355,18 @@ namespace backend.main.features.auth.stepup
                 if (user.IsDisabled)
                     throw new ForbiddenException("This account is disabled.");
 
+                // Revoking sessions cannot reach a challenge that is mid-flight: it holds no
+                // session yet. Without this check, a password or email change that signed every
+                // device out would still be followed by a challenge completing into a fresh
+                // session for whoever started it.
+                if (user.AuthVersion != state.AuthVersion)
+                {
+                    await DeleteStateAsync(state);
+                    throw new UnauthorizedException(
+                        "This sign-in verification challenge is no longer valid. Please sign in again."
+                    );
+                }
+
                 await _deviceTrustService.TrustAsync(
                     state.UserId,
                     state.TrustedDeviceId,
@@ -567,6 +580,14 @@ namespace backend.main.features.auth.stepup
                 get; set;
             }
             public required string ChallengeHash
+            {
+                get; set;
+            }
+            /// <summary>
+            /// The account's auth version when the challenge began. A challenge that outlives a
+            /// security-sensitive change must not still be able to mint a session.
+            /// </summary>
+            public int AuthVersion
             {
                 get; set;
             }

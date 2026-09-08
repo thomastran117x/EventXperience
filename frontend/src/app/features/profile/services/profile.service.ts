@@ -27,6 +27,7 @@ export interface MyProfile {
   Usertype: string;
   Phone?: string | null;
   Address?: string | null;
+  HasLocalPassword: boolean;
   GoogleLinked: boolean;
   MicrosoftLinked: boolean;
   CreatedAtUtc: string;
