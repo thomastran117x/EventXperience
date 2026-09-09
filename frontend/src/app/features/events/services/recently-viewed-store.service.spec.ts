@@ -531,6 +531,115 @@ describe('RecentlyViewedStore', () => {
     });
   });
 
+  describe('a first-time view of an event not already in the list', () => {
+    it('hydrates the single event and puts it at the head', () => {
+      recentlyViewed.getRecent.and.returnValue(of([entry(1)]));
+      recentlyViewed.recordView.and.returnValue(
+        of({ eventId: 9, recorded: true, viewedAtUtc: '2026-09-10T12:00:00Z' }),
+      );
+      events.getEventsBatch.and.returnValue(of([makeEventItem({ id: 9 })]));
+      const service = createStore({ user: signedInUser });
+      service.ensureLoaded();
+
+      service.recordView(9);
+
+      // Without this the event is missing from every rail for the rest of the session, because
+      // the list is already loaded and nothing refetches it.
+      expect(events.getEventsBatch).toHaveBeenCalledWith([9]);
+      let entries: RecentlyViewedEntry[] = [];
+      service.items$.subscribe((value) => (entries = value));
+      expect(entries.map((e) => e.eventId)).toEqual([9, 1]);
+    });
+
+    it('keeps the list capped at 50', () => {
+      const full = Array.from({ length: 50 }, (_, index) => entry(index + 1));
+      recentlyViewed.getRecent.and.returnValue(of(full));
+      recentlyViewed.recordView.and.returnValue(
+        of({ eventId: 999, recorded: true, viewedAtUtc: '2026-09-10T12:00:00Z' }),
+      );
+      events.getEventsBatch.and.returnValue(of([makeEventItem({ id: 999 })]));
+      const service = createStore({ user: signedInUser });
+      service.ensureLoaded();
+
+      service.recordView(999);
+
+      let entries: RecentlyViewedEntry[] = [];
+      service.items$.subscribe((value) => (entries = value));
+      expect(entries.length).toBe(50);
+      expect(entries[0].eventId).toBe(999);
+    });
+
+    it('does not hydrate while the list is still loading', () => {
+      // Hold the initial load open so the store has not settled a list yet.
+      recentlyViewed.getRecent.and.returnValue(new Subject<RecentlyViewedEntry[]>().asObservable());
+      recentlyViewed.recordView.and.returnValue(
+        of({ eventId: 9, recorded: true, viewedAtUtc: '2026-09-10T12:00:00Z' }),
+      );
+      const service = createStore({ user: signedInUser });
+
+      service.recordView(9);
+
+      // The in-flight load will include it anyway, so paying for a second request is waste.
+      expect(events.getEventsBatch).not.toHaveBeenCalled();
+    });
+
+    it('does not duplicate an entry that arrived while the hydration was in flight', () => {
+      recentlyViewed.getRecent.and.returnValue(of([entry(1)]));
+      recentlyViewed.recordView.and.returnValue(
+        of({ eventId: 9, recorded: true, viewedAtUtc: '2026-09-10T12:00:00Z' }),
+      );
+      const pending = new Subject<ReturnType<typeof makeEventItem>[]>();
+      events.getEventsBatch.and.returnValue(pending.asObservable());
+      const service = createStore({ user: signedInUser });
+      service.ensureLoaded();
+
+      service.recordView(9);
+      service.removeMany([1]).subscribe();
+      pending.next([makeEventItem({ id: 9 })]);
+
+      let entries: RecentlyViewedEntry[] = [];
+      service.items$.subscribe((value) => (entries = value));
+      expect(entries.filter((e) => e.eventId === 9).length).toBe(1);
+    });
+
+    it('falls back to refetching the list when the hydration fails', () => {
+      recentlyViewed.getRecent.and.returnValue(of([entry(1)]));
+      recentlyViewed.recordView.and.returnValue(
+        of({ eventId: 9, recorded: true, viewedAtUtc: '2026-09-10T12:00:00Z' }),
+      );
+      events.getEventsBatch.and.returnValue(throwError(() => new Error('offline')));
+      const service = createStore({ user: signedInUser });
+      service.ensureLoaded();
+      service.recordView(9);
+
+      recentlyViewed.getRecent.calls.reset();
+      service.ensureLoaded();
+
+      expect(recentlyViewed.getRecent).toHaveBeenCalled();
+    });
+  });
+
+  describe('overlapping local hydrations', () => {
+    it('lets only the newest hydration write', () => {
+      const first = new Subject<ReturnType<typeof makeEventItem>[]>();
+      const second = new Subject<ReturnType<typeof makeEventItem>[]>();
+      events.getEventsBatch.and.returnValues(first.asObservable(), second.asObservable());
+      const service = createStore();
+
+      service.recordView(4);
+      service.recordView(5);
+
+      // The second view resolves first, then the stale first response arrives.
+      second.next([makeEventItem({ id: 5 }), makeEventItem({ id: 4 })]);
+      first.next([makeEventItem({ id: 4 })]);
+
+      let entries: RecentlyViewedEntry[] = [];
+      service.items$.subscribe((value) => (entries = value));
+      // The older snapshot must not hide the event the visitor just opened.
+      expect(entries.map((e) => e.eventId)).toContain(5);
+    });
+  });
+
   describe('failures and stale sessions', () => {
     it('leaves the list empty when the history fails to load', () => {
       recentlyViewed.getRecent.and.returnValue(throwError(() => new Error('offline')));

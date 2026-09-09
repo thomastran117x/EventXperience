@@ -55,6 +55,13 @@ export class RecentlyViewedStore {
   private readonly lastRecorded = new Map<number, number>();
 
   /**
+   * Bumped by every local hydration. The session generation cannot separate two hydrations within
+   * one signed-out session, and a visitor who opens two events in quick succession starts both -
+   * so without this the slower first response can land last and hide the newer event.
+   */
+  private hydrationVersion = 0;
+
+  /**
    * Bumped by every reset. An in-flight load carries the generation it started under and discards
    * its response if that no longer matches — otherwise a slow GET issued for the previous user
    * lands after a sign-out and repopulates their history for whoever is looking at the screen.
@@ -343,11 +350,12 @@ export class RecentlyViewedStore {
     }
 
     const generation = this.sessionGeneration;
+    const hydration = ++this.hydrationVersion;
     this.loading = true;
 
     this.events.getEventsBatch(local.map((item) => item.id)).subscribe({
       next: (events) => {
-        if (!this.isCurrentSession(generation)) {
+        if (!this.isCurrentSession(generation) || hydration !== this.hydrationVersion) {
           return;
         }
 
@@ -356,7 +364,7 @@ export class RecentlyViewedStore {
         this.items.next(this.toEntries(local, events));
       },
       error: () => {
-        if (!this.isCurrentSession(generation)) {
+        if (!this.isCurrentSession(generation) || hydration !== this.hydrationVersion) {
           return;
         }
 
@@ -368,10 +376,13 @@ export class RecentlyViewedStore {
   private recordLocalView(eventId: number): void {
     const local = addLocalView(eventId);
     const generation = this.sessionGeneration;
+    const hydration = ++this.hydrationVersion;
 
     this.events.getEventsBatch(local.map((item) => item.id)).subscribe({
       next: (events) => {
-        if (!this.isCurrentSession(generation)) {
+        // Opening two events in quick succession leaves two hydrations in flight over different
+        // local snapshots; only the newest may write, or the older one hides the newer view.
+        if (!this.isCurrentSession(generation) || hydration !== this.hydrationVersion) {
           return;
         }
 
@@ -459,8 +470,9 @@ export class RecentlyViewedStore {
 
   private moveToHead(eventId: number, viewedAtUtc: string): void {
     const existing = this.items.value.find((entry) => entry.eventId === eventId);
+
     if (!existing) {
-      // Nothing to promote: the entry arrives on the next load, with its event attached.
+      this.adoptNewEntry(eventId, viewedAtUtc);
       return;
     }
 
@@ -468,5 +480,47 @@ export class RecentlyViewedStore {
       { ...existing, viewedAtUtc },
       ...this.items.value.filter((entry) => entry.eventId !== eventId),
     ]);
+  }
+
+  /**
+   * Pulls a first-time view into an already-loaded list.
+   *
+   * Without this the event is missing from every rail for the rest of the session: the POST
+   * succeeded but `loaded` stays true, so no later `ensureLoaded()` ever refetches it. Hydrating
+   * the single id is far cheaper than invalidating the whole list, which would re-run the server's
+   * per-event visibility check across all fifty entries.
+   */
+  private adoptNewEntry(eventId: number, viewedAtUtc: string): void {
+    if (!this.loaded) {
+      // The pending load will include it anyway.
+      return;
+    }
+
+    const generation = this.sessionGeneration;
+
+    this.events.getEventsBatch([eventId]).subscribe({
+      next: (events) => {
+        const event = events.find((candidate) => candidate.id === eventId);
+
+        if (!this.isCurrentSession(generation) || !event) {
+          return;
+        }
+
+        // Re-check on arrival: a delete or another view may have landed while this was in flight.
+        if (this.items.value.some((entry) => entry.eventId === eventId)) {
+          return;
+        }
+
+        this.items.next(
+          [{ eventId, viewedAtUtc, event }, ...this.items.value].slice(0, RecentlyViewedMaxItems),
+        );
+      },
+      error: () => {
+        // Fall back to refetching the list next time a surface asks for it.
+        if (this.isCurrentSession(generation)) {
+          this.loaded = false;
+        }
+      },
+    });
   }
 }

@@ -229,7 +229,7 @@ namespace backend.main.features.events.recentlyviewed
                 // Every timestamp here came from a browser, so treat the clock as hostile: a
                 // future timestamp would otherwise pin an entry to the head of the list forever.
                 var candidates = items
-                    .Select(i => new { i.EventId, ViewedAt = ClampViewedAt(i.ViewedAtUtc, now) })
+                    .Select(i => new MergeCandidate(i.EventId, ClampViewedAt(i.ViewedAtUtc, now)))
                     .Where(i => i.ViewedAt >= cutoff)
                     .ToList();
 
@@ -247,33 +247,7 @@ namespace backend.main.features.events.recentlyviewed
                 if (mergeable.Count == 0)
                     return result;
 
-                var incomingIds = mergeable.Select(c => c.EventId).ToList();
-
-                var existing = await _db.RecentlyViewedEvents
-                    .Where(v => v.UserId == userId && incomingIds.Contains(v.EventId))
-                    .ToDictionaryAsync(v => v.EventId);
-
-                foreach (var candidate in mergeable)
-                {
-                    if (existing.TryGetValue(candidate.EventId, out var row))
-                    {
-                        // Keep whichever view actually happened later. A client timestamp must
-                        // never be able to drag an entry backwards down the list.
-                        if (candidate.ViewedAt > row.ViewedAt)
-                            row.ViewedAt = candidate.ViewedAt;
-
-                        continue;
-                    }
-
-                    _db.RecentlyViewedEvents.Add(new RecentlyViewedEvent
-                    {
-                        UserId = userId,
-                        EventId = candidate.EventId,
-                        ViewedAt = candidate.ViewedAt
-                    });
-                }
-
-                await _db.SaveChangesAsync();
+                await ApplyMergeAsync(mergeable, userId);
 
                 result.Merged = mergeable.Count;
 
@@ -282,19 +256,14 @@ namespace backend.main.features.events.recentlyviewed
 
                 return result;
             }
-            catch (DbUpdateException)
-            {
-                // A concurrent merge from another device inserted one of the same ids. Both sides
-                // wanted the entry present, so the outcome is already what was asked for; report
-                // what survived rather than failing a login-time sync the user never asked for.
-                Logger.Warn("[RecentlyViewedService] MergeAsync lost an insert race; reporting the surviving state.");
-                return await BuildMergeStateAsync(request, userId);
-            }
             catch (Exception e)
             {
                 if (e is AppException)
                     throw;
 
+                // Includes a merge that lost the insert race twice over. Failing is the safe
+                // direction: the client keeps its local buffer and retries on the next sign-in,
+                // whereas a success response would have it discard events that never landed.
                 Logger.Error($"[RecentlyViewedService] MergeAsync failed: {e}");
                 throw new InternalServerErrorException();
             }
@@ -424,26 +393,63 @@ namespace backend.main.features.events.recentlyviewed
         }
 
         /// <summary>
-        /// Reports what a raced merge actually left behind, by counting how many of the requested
-        /// ids are now present.
+        /// Upserts the merged rows, retrying once if a concurrent merge wins an insert race.
+        /// <para>
+        /// The retry is not politeness. <c>SaveChangesAsync</c> commits as one unit, so a unique
+        /// violation on a single event rolls back every other insert and timestamp bump in the
+        /// batch. Reporting the surviving rows instead of reapplying would tell the client the
+        /// sync succeeded, and it would then clear a local buffer still holding events that never
+        /// reached the database. On the retry the conflicting row exists, so it takes the update
+        /// path and the rest inserts cleanly.
+        /// </para>
         /// </summary>
-        private async Task<RecentlyViewedMergeResultResponse> BuildMergeStateAsync(MergeRecentlyViewedRequest request, int userId)
+        private async Task ApplyMergeAsync(
+            IReadOnlyList<MergeCandidate> mergeable,
+            int userId,
+            int attemptsRemaining = 1)
         {
+            // Re-read on every attempt: after a rollback the tracked entities describe a state the
+            // database never took.
             _db.ChangeTracker.Clear();
 
-            var items = (request.Items ?? []).Take(_options.MaxItemsPerUser).ToList();
-            var ids = items.Select(i => i.EventId).Distinct().ToList();
+            var incomingIds = mergeable.Select(c => c.EventId).ToList();
 
-            var present = await _db.RecentlyViewedEvents
-                .AsNoTracking()
-                .CountAsync(v => v.UserId == userId && ids.Contains(v.EventId));
+            var existing = await _db.RecentlyViewedEvents
+                .Where(v => v.UserId == userId && incomingIds.Contains(v.EventId))
+                .ToDictionaryAsync(v => v.EventId);
 
-            return new RecentlyViewedMergeResultResponse
+            foreach (var candidate in mergeable)
             {
-                Total = items.Count,
-                Merged = present,
-                Skipped = Math.Max(0, items.Count - present)
-            };
+                if (existing.TryGetValue(candidate.EventId, out var row))
+                {
+                    // Keep whichever view actually happened later. A client timestamp must never
+                    // be able to drag an entry backwards down the list.
+                    if (candidate.ViewedAt > row.ViewedAt)
+                        row.ViewedAt = candidate.ViewedAt;
+
+                    continue;
+                }
+
+                _db.RecentlyViewedEvents.Add(new RecentlyViewedEvent
+                {
+                    UserId = userId,
+                    EventId = candidate.EventId,
+                    ViewedAt = candidate.ViewedAt
+                });
+            }
+
+            try
+            {
+                await _db.SaveChangesAsync();
+            }
+            catch (DbUpdateException) when (attemptsRemaining > 0)
+            {
+                Logger.Warn("[RecentlyViewedService] MergeAsync lost an insert race; reapplying the batch.");
+                await ApplyMergeAsync(mergeable, userId, attemptsRemaining - 1);
+            }
         }
+
+        /// <summary>One event to fold in, with its timestamp already clamped and vetted.</summary>
+        private sealed record MergeCandidate(int EventId, DateTime ViewedAt);
     }
 }

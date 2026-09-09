@@ -139,6 +139,12 @@ describe('EventDetailComponent', () => {
     recentlyViewedStore = jasmine.createSpyObj<RecentlyViewedStore>('RecentlyViewedStore', [
       'recordView',
     ]);
+
+    // Reset the shared session and flag state between tests. Several tests set a signed-in user
+    // and leave it set, while the signed-out cases only ever relied on the initial value - so
+    // under Jasmine's randomised ordering they would intermittently run as a signed-in user.
+    signedInUser = null;
+    waitlistFeatureEnabled = true;
     favouritesStore.isFavourited$.and.returnValue(favourited$.asObservable());
     favouritesStore.toggle.and.returnValue(of(true));
 

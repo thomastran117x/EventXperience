@@ -434,6 +434,81 @@ public class RecentlyViewedServiceTests
     }
 
     [Fact]
+    public async Task MergeAsync_ShouldKeepUnrelatedItems_WhenAnotherDeviceWinsAnInsertRace()
+    {
+        await using var harness = await RecentlyViewedHarness.CreateAsync();
+        var viewedAt = harness.Time.GetUtcNow().UtcDateTime.AddHours(-1);
+
+        // Another device commits its own merge for event 1 in the window between this merge
+        // reading the existing rows and saving them.
+        harness.OnBeforeSaveOnce(async db =>
+        {
+            db.RecentlyViewedEvents.Add(new RecentlyViewedEvent
+            {
+                UserId = harness.UserId,
+                EventId = 1,
+                ViewedAt = viewedAt
+            });
+            await db.SaveChangesAsync();
+            db.ChangeTracker.Clear();
+        });
+
+        var result = await harness.Service.MergeAsync(
+            Merge((1, viewedAt), (2, viewedAt)),
+            harness.UserId,
+            "Participant");
+
+        // SaveChanges commits as one unit, so the conflict on event 1 rolls back event 2 as well.
+        // Reporting the survivors instead of reapplying would tell the client the sync succeeded
+        // and it would discard a local buffer still holding event 2.
+        result.Merged.Should().Be(2);
+
+        var stored = await harness.Db.RecentlyViewedEvents.AsNoTracking()
+            .Where(v => v.UserId == harness.UserId)
+            .Select(v => v.EventId)
+            .OrderBy(id => id)
+            .ToListAsync();
+        stored.Should().Equal(1, 2);
+    }
+
+    [Fact]
+    public async Task MergeAsync_ShouldThrow_WhenTheRaceOutlastsTheRetry()
+    {
+        await using var harness = await RecentlyViewedHarness.CreateAsync();
+        var viewedAt = harness.Time.GetUtcNow().UtcDateTime.AddHours(-1);
+
+        harness.OnBeforeSaveAlways(async db =>
+        {
+            // Delete and reinsert, so the row the service just read is always gone by the time it
+            // writes: the first attempt collides on insert, the second updates a row id that no
+            // longer exists and affects zero rows.
+            await db.RecentlyViewedEvents
+                .Where(v => v.UserId == harness.UserId && v.EventId == 1)
+                .ExecuteDeleteAsync();
+
+            // Older than the incoming view, so the retry has a timestamp to actually write and
+            // therefore a row to collide on. Matching timestamps would leave nothing to save.
+            db.RecentlyViewedEvents.Add(new RecentlyViewedEvent
+            {
+                UserId = harness.UserId,
+                EventId = 1,
+                ViewedAt = viewedAt.AddHours(-2)
+            });
+            await db.SaveChangesAsync();
+            db.ChangeTracker.Clear();
+        });
+
+        var act = async () => await harness.Service.MergeAsync(
+            Merge((1, viewedAt)),
+            harness.UserId,
+            "Participant");
+
+        // Failing is the safe direction: the client keeps its buffer and retries next sign-in,
+        // whereas a success response would have it discard events that never landed.
+        await act.Should().ThrowAsync<InternalServerErrorException>();
+    }
+
+    [Fact]
     public async Task MergeAsync_ShouldTrimOnce_WhenTheBatchOverflowsTheCap()
     {
         await using var harness = await RecentlyViewedHarness.CreateAsync();
@@ -524,6 +599,10 @@ internal sealed class RecentlyViewedHarness : IAsyncDisposable
     private readonly SqliteConnection _connection;
     private readonly HashSet<int> _hiddenEventIds = [];
     private bool _visibilityDenied;
+
+    private DbContextOptions<AppDatabaseContext> _contextOptions = null!;
+    private Func<AppDatabaseContext, Task>? _beforeSave;
+    private bool _beforeSaveOnce;
 
     public AppDatabaseContext Db { get; }
     public RecentlyViewedService Service { get; }
@@ -638,10 +717,48 @@ internal sealed class RecentlyViewedHarness : IAsyncDisposable
             Options.Create(new RecentlyViewedOptions()),
             time);
 
-        var harness = new RecentlyViewedHarness(connection, db, service, refreshCacheMock, time);
+        var harness = new RecentlyViewedHarness(connection, db, service, refreshCacheMock, time)
+        {
+            _contextOptions = options
+        };
         harnessRef[0] = harness;
 
+        // Fires between the service reading its rows and committing them - the window a competing
+        // device would land in.
+        db.SavingChanges += (_, _) => harness.RunBeforeSave();
+
         return harness;
+    }
+
+    /// <summary>Runs once, on the next save, as a competing device would.</summary>
+    public void OnBeforeSaveOnce(Func<AppDatabaseContext, Task> action)
+    {
+        _beforeSave = action;
+        _beforeSaveOnce = true;
+    }
+
+    /// <summary>Runs on every save, so a race can be made to outlast the retry.</summary>
+    public void OnBeforeSaveAlways(Func<AppDatabaseContext, Task> action)
+    {
+        _beforeSave = action;
+        _beforeSaveOnce = false;
+    }
+
+    /// <summary>
+    /// Applies the interference on its own context, so it commits independently of the save the
+    /// service is part way through - which is what makes the conflict real rather than staged.
+    /// </summary>
+    internal void RunBeforeSave()
+    {
+        var action = _beforeSave;
+        if (action == null)
+            return;
+
+        if (_beforeSaveOnce)
+            _beforeSave = null;
+
+        using var other = new AppDatabaseContext(_contextOptions);
+        action(other).GetAwaiter().GetResult();
     }
 
     /// <summary>Makes every event invisible, as a revoked private-event invitation would.</summary>
