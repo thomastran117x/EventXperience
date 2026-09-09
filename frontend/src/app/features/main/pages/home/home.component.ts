@@ -4,6 +4,7 @@ import { Router, RouterModule } from '@angular/router';
 
 import { AppButtonComponent } from '@common/button/button.component';
 import { PillComponent } from '@common/pill/pill.component';
+import { RecentlyViewedRailComponent } from '../../../events/components/recently-viewed-rail/recently-viewed-rail.component';
 import { FeatureFlagsService } from '../../../../core/features/feature-flags.service';
 import { FEATURE_KEYS } from '../../../../core/features/feature-flags.types';
 
@@ -22,7 +23,13 @@ type Testimonial = { quote: string; name: string; role: string };
 @Component({
   selector: 'app-home-page',
   standalone: true,
-  imports: [FormsModule, RouterModule, AppButtonComponent, PillComponent],
+  imports: [
+    FormsModule,
+    RouterModule,
+    AppButtonComponent,
+    PillComponent,
+    RecentlyViewedRailComponent,
+  ],
   template: `
     <div class="app-page">
       <main class="pb-16 sm:pb-20">
@@ -218,6 +225,10 @@ type Testimonial = { quote: string; name: string; role: string };
               </div>
             </section>
           }
+
+          <!-- Renders nothing until there is a history to show, so a first-time visitor sees the
+               page exactly as before. -->
+          <app-recently-viewed-rail [limit]="4" />
 
           <section>
             <div class="grid gap-6 lg:grid-cols-[0.82fr_1.18fr] lg:items-start">

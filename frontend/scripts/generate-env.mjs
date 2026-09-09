@@ -16,6 +16,7 @@ const ALL_FEATURE_KEYS = [
   'events.favourites',
   'events.images',
   'events.invitations',
+  'events.recentlyviewed',
   'events.registration',
   'events.versioning',
   'events.waitlist',

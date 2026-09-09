@@ -22,6 +22,7 @@ public sealed class FeatureFlagRegistry
             FeatureFlagKeys.EventsFavourites,
             FeatureFlagKeys.EventsImages,
             FeatureFlagKeys.EventsInvitations,
+            FeatureFlagKeys.EventsRecentlyViewed,
             FeatureFlagKeys.EventsRecurrence,
             FeatureFlagKeys.EventsRegistration,
             FeatureFlagKeys.EventsVersioning,

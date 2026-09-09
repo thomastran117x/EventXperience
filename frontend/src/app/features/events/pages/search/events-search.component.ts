@@ -6,6 +6,7 @@ import { Subject, debounceTime, takeUntil } from 'rxjs';
 
 import { EventsService } from '../../services/events.service';
 import { EventFavouriteToggleComponent } from '../../components/event-favourite-toggle/event-favourite-toggle.component';
+import { RecentlyViewedRailComponent } from '../../components/recently-viewed-rail/recently-viewed-rail.component';
 import {
   ALL_CATEGORIES,
   ALL_EVENT_SORTS,
@@ -49,7 +50,13 @@ type FilterChip = {
 @Component({
   selector: 'app-events-search',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule, EventFavouriteToggleComponent],
+  imports: [
+    CommonModule,
+    FormsModule,
+    RouterModule,
+    EventFavouriteToggleComponent,
+    RecentlyViewedRailComponent,
+  ],
   templateUrl: './events-search.component.html',
 })
 export class EventsSearchComponent implements OnInit, OnDestroy {

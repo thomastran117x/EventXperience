@@ -21,6 +21,7 @@ public static class FeatureFlagKeys
     public const string EventsFavourites = "events.favourites";
     public const string EventsImages = "events.images";
     public const string EventsInvitations = "events.invitations";
+    public const string EventsRecentlyViewed = "events.recentlyviewed";
     public const string EventsRecurrence = "events.recurrence";
     public const string EventsRegistration = "events.registration";
     public const string EventsVersioning = "events.versioning";

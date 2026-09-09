@@ -17,7 +17,7 @@ namespace backend.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.10")
+                .HasAnnotation("ProductVersion", "10.0.11")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "citext");
@@ -851,9 +851,9 @@ namespace backend.Migrations
 
                     b.HasIndex("ClubId");
 
-                    b.HasIndex("Latitude", "Longitude");
-
                     b.HasIndex("LifecycleState");
+
+                    b.HasIndex("Latitude", "Longitude");
 
                     b.HasIndex("SeriesId", "OccurrenceIndex")
                         .IsUnique();
@@ -1065,6 +1065,62 @@ namespace backend.Migrations
                     b.HasIndex("EventId", "RevokedAtUtc", "ExpiresAt");
 
                     b.ToTable("EventInvitationLinks");
+                });
+
+            modelBuilder.Entity("backend.main.features.events.recentlyviewed.RecentlyViewedEvent", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("EventId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("ViewedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EventId");
+
+                    b.HasIndex("ViewedAt");
+
+                    b.HasIndex("UserId", "EventId")
+                        .IsUnique();
+
+                    b.HasIndex("UserId", "ViewedAt");
+
+                    b.ToTable("RecentlyViewedEvents");
+                });
+
+            modelBuilder.Entity("backend.main.features.events.recentlyviewed.RecentlyViewedSetting", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId")
+                        .IsUnique();
+
+                    b.ToTable("RecentlyViewedSettings");
                 });
 
             modelBuilder.Entity("backend.main.features.events.registration.EventRegistration", b =>
@@ -1789,6 +1845,30 @@ namespace backend.Migrations
                         .IsRequired();
 
                     b.Navigation("Event");
+                });
+
+            modelBuilder.Entity("backend.main.features.events.recentlyviewed.RecentlyViewedEvent", b =>
+                {
+                    b.HasOne("backend.main.features.events.Events", null)
+                        .WithMany()
+                        .HasForeignKey("EventId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("backend.main.features.profile.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("backend.main.features.events.recentlyviewed.RecentlyViewedSetting", b =>
+                {
+                    b.HasOne("backend.main.features.profile.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("backend.main.features.events.registration.EventRegistration", b =>

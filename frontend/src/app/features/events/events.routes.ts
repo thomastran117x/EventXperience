@@ -24,6 +24,12 @@ export const EVENTS_ROUTES: Routes = [
       import('./pages/my-pinned/my-pinned.component').then((m) => m.MyPinnedComponent),
   },
   {
+    path: 'me/recent',
+    canMatch: [featureCanMatch(FEATURE_KEYS.eventsRecentlyViewed)],
+    loadComponent: () =>
+      import('./pages/my-recent/my-recent.component').then((m) => m.MyRecentComponent),
+  },
+  {
     path: 'me/waitlisted',
     canMatch: [featureCanMatch(FEATURE_KEYS.eventsWaitlist)],
     loadComponent: () =>

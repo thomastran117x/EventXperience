@@ -45,6 +45,16 @@
       >
         Password
       </a>
+      @if (privacyTabEnabled) {
+        <a
+          routerLink="privacy"
+          routerLinkActive="border-b-2 border-accent text-content font-semibold"
+          [routerLinkActiveOptions]="{ exact: false }"
+          class="px-4 pb-3 pt-2 text-sm font-medium text-subtle transition hover:text-content"
+        >
+          Privacy
+        </a>
+      }
       <a
         routerLink="danger"
         routerLinkActive="border-b-2 border-danger text-danger font-semibold"

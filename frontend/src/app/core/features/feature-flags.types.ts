@@ -11,6 +11,7 @@ export const FEATURE_KEYS = {
   eventsFavourites: 'events.favourites',
   eventsImages: 'events.images',
   eventsInvitations: 'events.invitations',
+  eventsRecentlyViewed: 'events.recentlyviewed',
   eventsRegistration: 'events.registration',
   eventsVersioning: 'events.versioning',
   eventsWaitlist: 'events.waitlist',
