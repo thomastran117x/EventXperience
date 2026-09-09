@@ -23,7 +23,7 @@ public class RecentlyViewedEndpointsTests
     {
         await using var app = await AuthApiTestApp.CreateAsync();
         var organizer = await CreateUserSessionAsync(app, "rv-store-organizer@example.com", "Organizer");
-        var club = await CreateClubAsync(app, organizer.Session.AccessToken, "Recently Viewed Store Club");
+        var club = await CreateClubAsync(app, organizer.Session.AccessToken, "RV Store Club");
         var ev = await CreateEventAsync(app, organizer.Session.AccessToken, club.Id);
 
         var user = await CreateUserSessionAsync(app, "rv-store-user@example.com");
@@ -46,7 +46,7 @@ public class RecentlyViewedEndpointsTests
     {
         await using var app = await AuthApiTestApp.CreateAsync();
         var organizer = await CreateUserSessionAsync(app, "rv-repeat-organizer@example.com", "Organizer");
-        var club = await CreateClubAsync(app, organizer.Session.AccessToken, "Recently Viewed Repeat Club");
+        var club = await CreateClubAsync(app, organizer.Session.AccessToken, "RV Repeat Club");
         var ev = await CreateEventAsync(app, organizer.Session.AccessToken, club.Id);
 
         var user = await CreateUserSessionAsync(app, "rv-repeat-user@example.com");
@@ -70,7 +70,7 @@ public class RecentlyViewedEndpointsTests
     {
         await using var app = await AuthApiTestApp.CreateAsync();
         var organizer = await CreateUserSessionAsync(app, "rv-private-organizer@example.com", "Organizer");
-        var club = await CreateClubAsync(app, organizer.Session.AccessToken, "Recently Viewed Private Club");
+        var club = await CreateClubAsync(app, organizer.Session.AccessToken, "RV Private Club");
         var ev = await CreateEventAsync(app, organizer.Session.AccessToken, club.Id, isPrivate: true);
 
         var outsider = await CreateUserSessionAsync(app, "rv-private-outsider@example.com");
@@ -91,7 +91,7 @@ public class RecentlyViewedEndpointsTests
     {
         await using var app = await AuthApiTestApp.CreateAsync();
         var organizer = await CreateUserSessionAsync(app, "rv-order-organizer@example.com", "Organizer");
-        var club = await CreateClubAsync(app, organizer.Session.AccessToken, "Recently Viewed Order Club");
+        var club = await CreateClubAsync(app, organizer.Session.AccessToken, "RV Order Club");
         var first = await CreateEventAsync(app, organizer.Session.AccessToken, club.Id, startsInDays: 6);
         var second = await CreateEventAsync(app, organizer.Session.AccessToken, club.Id, startsInDays: 7);
         var third = await CreateEventAsync(app, organizer.Session.AccessToken, club.Id, startsInDays: 8);
@@ -115,7 +115,7 @@ public class RecentlyViewedEndpointsTests
     {
         await using var app = await AuthApiTestApp.CreateAsync();
         var organizer = await CreateUserSessionAsync(app, "rv-remove-organizer@example.com", "Organizer");
-        var club = await CreateClubAsync(app, organizer.Session.AccessToken, "Recently Viewed Remove Club");
+        var club = await CreateClubAsync(app, organizer.Session.AccessToken, "RV Remove Club");
         var kept = await CreateEventAsync(app, organizer.Session.AccessToken, club.Id, startsInDays: 6);
         var dropped = await CreateEventAsync(app, organizer.Session.AccessToken, club.Id, startsInDays: 7);
 
@@ -141,7 +141,7 @@ public class RecentlyViewedEndpointsTests
     {
         await using var app = await AuthApiTestApp.CreateAsync();
         var organizer = await CreateUserSessionAsync(app, "rv-batch-organizer@example.com", "Organizer");
-        var club = await CreateClubAsync(app, organizer.Session.AccessToken, "Recently Viewed Batch Club");
+        var club = await CreateClubAsync(app, organizer.Session.AccessToken, "RV Batch Club");
         var one = await CreateEventAsync(app, organizer.Session.AccessToken, club.Id, startsInDays: 6);
         var two = await CreateEventAsync(app, organizer.Session.AccessToken, club.Id, startsInDays: 7);
         var three = await CreateEventAsync(app, organizer.Session.AccessToken, club.Id, startsInDays: 8);
@@ -166,7 +166,7 @@ public class RecentlyViewedEndpointsTests
     {
         await using var app = await AuthApiTestApp.CreateAsync();
         var organizer = await CreateUserSessionAsync(app, "rv-scope-organizer@example.com", "Organizer");
-        var club = await CreateClubAsync(app, organizer.Session.AccessToken, "Recently Viewed Scope Club");
+        var club = await CreateClubAsync(app, organizer.Session.AccessToken, "RV Scope Club");
         var ev = await CreateEventAsync(app, organizer.Session.AccessToken, club.Id);
 
         var user = await CreateUserSessionAsync(app, "rv-scope-user@example.com");
@@ -208,7 +208,7 @@ public class RecentlyViewedEndpointsTests
     {
         await using var app = await AuthApiTestApp.CreateAsync();
         var organizer = await CreateUserSessionAsync(app, "rv-clear-organizer@example.com", "Organizer");
-        var club = await CreateClubAsync(app, organizer.Session.AccessToken, "Recently Viewed Clear Club");
+        var club = await CreateClubAsync(app, organizer.Session.AccessToken, "RV Clear Club");
         var one = await CreateEventAsync(app, organizer.Session.AccessToken, club.Id, startsInDays: 6);
         var two = await CreateEventAsync(app, organizer.Session.AccessToken, club.Id, startsInDays: 7);
 
@@ -230,7 +230,7 @@ public class RecentlyViewedEndpointsTests
     {
         await using var app = await AuthApiTestApp.CreateAsync();
         var organizer = await CreateUserSessionAsync(app, "rv-merge-organizer@example.com", "Organizer");
-        var club = await CreateClubAsync(app, organizer.Session.AccessToken, "Recently Viewed Merge Club");
+        var club = await CreateClubAsync(app, organizer.Session.AccessToken, "RV Merge Club");
         var one = await CreateEventAsync(app, organizer.Session.AccessToken, club.Id, startsInDays: 6);
         var two = await CreateEventAsync(app, organizer.Session.AccessToken, club.Id, startsInDays: 7);
 
@@ -263,7 +263,7 @@ public class RecentlyViewedEndpointsTests
     {
         await using var app = await AuthApiTestApp.CreateAsync();
         var organizer = await CreateUserSessionAsync(app, "rv-mergepriv-organizer@example.com", "Organizer");
-        var club = await CreateClubAsync(app, organizer.Session.AccessToken, "Recently Viewed Merge Private Club");
+        var club = await CreateClubAsync(app, organizer.Session.AccessToken, "RV Merge Private Club");
         var visible = await CreateEventAsync(app, organizer.Session.AccessToken, club.Id, startsInDays: 6);
         var hidden = await CreateEventAsync(app, organizer.Session.AccessToken, club.Id, startsInDays: 7, isPrivate: true);
 
@@ -318,7 +318,7 @@ public class RecentlyViewedEndpointsTests
     {
         await using var app = await AuthApiTestApp.CreateAsync();
         var organizer = await CreateUserSessionAsync(app, "rv-optout-organizer@example.com", "Organizer");
-        var club = await CreateClubAsync(app, organizer.Session.AccessToken, "Recently Viewed Opt Out Club");
+        var club = await CreateClubAsync(app, organizer.Session.AccessToken, "RV Opt Out Club");
         var ev = await CreateEventAsync(app, organizer.Session.AccessToken, club.Id);
 
         var user = await CreateUserSessionAsync(app, "rv-optout-user@example.com");
@@ -343,7 +343,7 @@ public class RecentlyViewedEndpointsTests
     {
         await using var app = await AuthApiTestApp.CreateAsync();
         var organizer = await CreateUserSessionAsync(app, "rv-offrecord-organizer@example.com", "Organizer");
-        var club = await CreateClubAsync(app, organizer.Session.AccessToken, "Recently Viewed Off Record Club");
+        var club = await CreateClubAsync(app, organizer.Session.AccessToken, "RV Off Record Club");
         var ev = await CreateEventAsync(app, organizer.Session.AccessToken, club.Id);
 
         var user = await CreateUserSessionAsync(app, "rv-offrecord-user@example.com");
@@ -454,7 +454,7 @@ public class RecentlyViewedEndpointsTests
             accessToken,
             JsonContent.Create(new
             {
-                name = $"Recently Viewed Event D{startsInDays}{(isPrivate ? " Private" : string.Empty)}",
+                name = $"RV Event D{startsInDays}{(isPrivate ? " Private" : string.Empty)}",
                 description = "A published event used for recently viewed integration coverage.",
                 location = "Student Center",
                 imageUrls = new[] { image.PublicUrl },
