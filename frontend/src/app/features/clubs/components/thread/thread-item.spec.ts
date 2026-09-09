@@ -15,7 +15,13 @@ function node(overrides: Partial<ThreadDisplayItem> = {}): ThreadDisplayNode {
     updatedAt: '2026-08-15T12:00:00Z',
     userId: 7,
     content: 'Hello',
-    author: { id: 7, name: 'Taylor Rider', username: 'taylor', avatar: null },
+    author: {
+      id: 7,
+      name: 'Taylor Rider',
+      username: 'taylor',
+      usernameDisplay: 'taylor',
+      avatar: null,
+    },
     isDeleted: false,
     likeCount: 0,
     dislikeCount: 0,
@@ -87,7 +93,15 @@ describe('threadAuthorName', () => {
     expect(threadAuthorName(node(), 'Reply deleted')).toBe('Taylor Rider');
     expect(
       threadAuthorName(
-        node({ author: { id: 7, name: null, username: 'taylor', avatar: null } }),
+        node({
+          author: {
+            id: 7,
+            name: null,
+            username: 'taylor',
+            usernameDisplay: 'taylor',
+            avatar: null,
+          },
+        }),
         'x',
       ),
     ).toBe('taylor');

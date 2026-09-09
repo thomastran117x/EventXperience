@@ -9,6 +9,9 @@ public sealed class UsernameAvailabilityService : IUsernameAvailabilityService
     private readonly IAuthUserRepository _repository;
     private readonly IBloomFilterRegistry _bloomFilters;
 
+    private static readonly IReadOnlySet<string> EmptyResult =
+        new HashSet<string>(StringComparer.Ordinal);
+
     public UsernameAvailabilityService(
         IAuthUserRepository repository,
         IBloomFilterRegistry bloomFilters)
@@ -39,6 +42,35 @@ public sealed class UsernameAvailabilityService : IUsernameAvailabilityService
         }
 
         return await _repository.UsernameUnavailableAsync(normalizedUsername, utcNow);
+    }
+
+    public async Task<IReadOnlySet<string>> FindUnavailableAsync(
+        IReadOnlyCollection<string> normalizedUsernames,
+        DateTime utcNow,
+        AvailabilityLookupMode mode = AvailabilityLookupMode.Authoritative,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (normalizedUsernames.Count == 0)
+            return EmptyResult;
+
+        // Same rule as the single-value path, applied per candidate: DefinitelyAbsent is the only
+        // answer that permits skipping the query, and it is exact with respect to this filter.
+        // Anything else — PossiblyPresent, or Unavailable because the filter is disabled or not yet
+        // hydrated — has to be asked about. Note that filtering on "not DefinitelyAbsent" rather
+        // than on "PossiblyPresent" is what keeps this working when no filter is loaded at all.
+        var mustQuery = mode == AvailabilityLookupMode.Advisory
+            ? normalizedUsernames
+                .Where(username => _bloomFilters.MightContain(BloomFilterTargets.Username, username)
+                    != BloomFilterLookup.DefinitelyAbsent)
+                .ToList()
+            : normalizedUsernames.ToList();
+
+        if (mustQuery.Count == 0)
+            return EmptyResult;
+
+        return await _repository.FindUnavailableUsernamesAsync(mustQuery, utcNow, cancellationToken);
     }
 
     public async Task MarkTakenAsync(

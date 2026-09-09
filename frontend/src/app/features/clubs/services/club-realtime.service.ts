@@ -23,6 +23,8 @@ export interface RealtimePresenceUser {
   userId: number;
   name: string | null;
   username: string | null;
+  /** The username as its owner wrote it. Render this; link by `username`. */
+  usernameDisplay?: string | null;
   avatar: string | null;
 }
 

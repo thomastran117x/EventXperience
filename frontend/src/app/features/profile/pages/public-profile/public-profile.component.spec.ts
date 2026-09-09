@@ -40,6 +40,7 @@ describe('PublicProfileComponent', () => {
   it('replace-navigates an active alias to the canonical username', () => {
     const profile: PublicProfile = {
       Username: 'new-name',
+      UsernameDisplay: 'new-name',
       Name: 'Member',
       Avatar: null,
       Usertype: 'Participant',
@@ -60,6 +61,7 @@ describe('PublicProfileComponent', () => {
     profileService.getPublicProfile.and.returnValue(
       of({
         Username: 'new-name',
+        UsernameDisplay: 'new-name',
         Name: null,
         Avatar: null,
         Usertype: 'Participant',

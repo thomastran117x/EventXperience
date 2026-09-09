@@ -150,7 +150,14 @@ namespace backend.main.features.clubs.posts
             new(p.Id, p.ClubId, p.UserId, p.Title, p.Content, p.PostType, p.LikesCount, p.ViewCount, p.IsPinned, p.CreatedAt, p.UpdatedAt)
             {
                 CommentCount = p.CommentCount,
-                Author = new AuthorInfo { Id = p.UserId, Name = user?.Name, Username = user?.Username, Avatar = user?.Avatar }
+                Author = new AuthorInfo
+                {
+                    Id = p.UserId,
+                    Name = user?.Name,
+                    Username = user?.Username,
+                    UsernameDisplay = user?.UsernameDisplay ?? user?.Username,
+                    Avatar = user?.Avatar
+                }
             };
     }
 
@@ -215,7 +222,14 @@ namespace backend.main.features.clubs.posts
             new(p.Id, p.ClubId, p.UserId, p.Title, p.Content, p.PostType, p.LikesCount, p.ViewCount, p.IsPinned, p.CreatedAt, p.UpdatedAt)
             {
                 CommentCount = p.CommentCount,
-                Author = new AuthorInfo { Id = p.UserId, Name = user?.Name, Username = user?.Username, Avatar = user?.Avatar }
+                Author = new AuthorInfo
+                {
+                    Id = p.UserId,
+                    Name = user?.Name,
+                    Username = user?.Username,
+                    UsernameDisplay = user?.UsernameDisplay ?? user?.Username,
+                    Avatar = user?.Avatar
+                }
             };
     }
 }

@@ -229,7 +229,7 @@
                   <p class="truncate font-semibold text-content">{{ displayName(member) }}</p>
                   <p class="truncate text-xs text-faint">
                     @if (member.username) {
-                      &#64;{{ member.username }} ·
+                      &#64;{{ member.usernameDisplay || member.username }} ·
                     }
                     Joined {{ member.createdAt | date: 'mediumDate' }}
                   </p>

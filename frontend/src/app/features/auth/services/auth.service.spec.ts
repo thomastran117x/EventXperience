@@ -733,4 +733,53 @@ describe('AuthService', () => {
     expect((thrown as ApiClientServerError).message).toBe(NETWORK_API_ERROR_MESSAGE);
     expect((thrown as ApiClientServerError).status).toBe(0);
   }));
+
+  it('unwraps the suggestion list from the envelope', fakeAsync(() => {
+    const received: unknown[] = [];
+    service.getUsernameSuggestions().subscribe((suggestions) => received.push(suggestions));
+
+    const request = httpMock.expectOne((req) => req.url.endsWith('/auth/username/suggestions'));
+    expect(request.request.method).toBe('GET');
+    request.flush({
+      success: true,
+      message: 'Username suggestions generated.',
+      data: {
+        suggestions: [
+          { username: 'smartcat23', display: 'SmartCat23' },
+          { username: 'braveotter47', display: 'BraveOtter47' },
+        ],
+      },
+      error: null,
+      meta: null,
+    });
+    tick();
+
+    expect(received).toEqual([
+      [
+        { username: 'smartcat23', display: 'SmartCat23' },
+        { username: 'braveotter47', display: 'BraveOtter47' },
+      ],
+    ]);
+  }));
+
+  /**
+   * The chips are decorative. A failed draw must not surface an error on a signup form that works
+   * perfectly well without them, so this fails soft rather than propagating.
+   */
+  it('falls back to an empty list when the draw fails', fakeAsync(() => {
+    const received: unknown[] = [];
+    let errored = false;
+    service.getUsernameSuggestions().subscribe({
+      next: (suggestions) => received.push(suggestions),
+      error: () => (errored = true),
+    });
+
+    httpMock
+      .expectOne((req) => req.url.endsWith('/auth/username/suggestions'))
+      .flush({}, { status: 429, statusText: 'Too Many Requests' });
+    tick();
+
+    expect(errored).toBeFalse();
+    expect(received).toEqual([[]]);
+  }));
 });

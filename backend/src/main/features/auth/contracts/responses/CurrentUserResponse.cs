@@ -14,6 +14,15 @@ namespace backend.main.features.auth.contracts.responses
         {
             get; set;
         } = null!;
+
+        /// <summary>
+        /// The username as its owner wrote it, e.g. <c>ThomasT</c>. Render this; resolve by
+        /// <c>Username</c>.
+        /// </summary>
+        public string UsernameDisplay
+        {
+            get; set;
+        } = null!;
         public string? Name
         {
             get; set;

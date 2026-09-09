@@ -242,7 +242,12 @@ public sealed class ClubRealtimeHub : Hub
         if (record is null)
             return null;
 
-        var user = new PresenceUser(record.Id, record.Name, record.Username, record.Avatar);
+        var user = new PresenceUser(
+            record.Id,
+            record.Name,
+            record.Username,
+            record.Avatar,
+            record.UsernameDisplay ?? record.Username);
         Context.Items[PresenceUserItemKey] = user;
         return user;
     }

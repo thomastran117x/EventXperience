@@ -157,6 +157,67 @@ public class UsernameAvailabilityServiceTests
         await act.Should().NotThrowAsync();
     }
 
+    /// <summary>
+    /// The point of the batched form: names the filter proves absent never reach the database, so a
+    /// suggestion draw against a hydrated filter costs nothing at all.
+    /// </summary>
+    [Fact]
+    public async Task FindUnavailableAsync_ShouldNotQuery_WhenTheFilterClearsEveryCandidate()
+    {
+        var repository = new Mock<IAuthUserRepository>();
+        var service = CreateService(repository, BloomFilterLookup.DefinitelyAbsent);
+
+        var taken = await service.FindUnavailableAsync(
+            ["ada", "grace"], Now, AvailabilityLookupMode.Advisory);
+
+        taken.Should().BeEmpty();
+        repository.Verify(
+            r => r.FindUnavailableUsernamesAsync(
+                It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<DateTime>()),
+            Times.Never);
+    }
+
+    /// <summary>
+    /// The case that makes batching worth having. DisabledBloomFilterRegistry answers Unavailable
+    /// for every lookup, so with the feature flag off nothing can be cleared without asking — and
+    /// this must still be one query, not one per candidate. Filtering on "not DefinitelyAbsent"
+    /// rather than on "PossiblyPresent" is what keeps it correct when no filter is loaded.
+    /// </summary>
+    [Fact]
+    public async Task FindUnavailableAsync_ShouldMakeOneQuery_WhenNoFilterIsLoaded()
+    {
+        var repository = new Mock<IAuthUserRepository>();
+        repository
+            .Setup(r => r.FindUnavailableUsernamesAsync(
+                It.IsAny<IReadOnlyCollection<string>>(), Now))
+            .ReturnsAsync(new HashSet<string>(["ada"], StringComparer.Ordinal));
+        var service = CreateService(repository, BloomFilterLookup.Unavailable);
+
+        var taken = await service.FindUnavailableAsync(
+            ["ada", "grace"], Now, AvailabilityLookupMode.Advisory);
+
+        taken.Should().BeEquivalentTo(["ada"]);
+        repository.Verify(
+            r => r.FindUnavailableUsernamesAsync(
+                It.Is<IReadOnlyCollection<string>>(names => names.Count == 2), Now),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task FindUnavailableAsync_ShouldNotQuery_WhenGivenNothing()
+    {
+        var repository = new Mock<IAuthUserRepository>();
+        var service = CreateService(repository, BloomFilterLookup.Unavailable);
+
+        var taken = await service.FindUnavailableAsync([], Now, AvailabilityLookupMode.Advisory);
+
+        taken.Should().BeEmpty();
+        repository.Verify(
+            r => r.FindUnavailableUsernamesAsync(
+                It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<DateTime>()),
+            Times.Never);
+    }
+
     private static UsernameAvailabilityService CreateService(
         Mock<IAuthUserRepository> repository,
         BloomFilterLookup lookup)

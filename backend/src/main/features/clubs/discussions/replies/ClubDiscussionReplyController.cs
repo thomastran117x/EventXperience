@@ -162,6 +162,7 @@ public sealed class ClubDiscussionReplyController : ControllerBase
                 Id = reply.UserId,
                 Name = view.Author?.Name,
                 Username = view.Author?.Username,
+                UsernameDisplay = view.Author?.UsernameDisplay ?? view.Author?.Username,
                 Avatar = view.Author?.Avatar
             },
             IsDeleted = reply.IsDeleted,

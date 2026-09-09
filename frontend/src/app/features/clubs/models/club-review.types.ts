@@ -10,6 +10,8 @@ export interface ClubReview {
   createdAt: string;
   name: string | null;
   username: string | null;
+  /** The username as its owner wrote it. Render this; link by `username`. */
+  usernameDisplay: string | null;
   avatar: string | null;
 }
 
@@ -33,6 +35,8 @@ type ClubReviewPayload = Partial<ClubReview> & {
   CreatedAt?: string;
   Name?: string | null;
   Username?: string | null;
+  usernameDisplay?: string | null;
+  UsernameDisplay?: string | null;
   Avatar?: string | null;
 };
 
@@ -47,6 +51,8 @@ export function normalizeClubReview(raw: ClubReviewPayload): ClubReview {
     createdAt: raw.createdAt ?? raw.CreatedAt ?? '',
     name: raw.name ?? raw.Name ?? null,
     username: raw.username ?? raw.Username ?? null,
+    usernameDisplay:
+      raw.usernameDisplay ?? raw.UsernameDisplay ?? raw.username ?? raw.Username ?? null,
     avatar: raw.avatar ?? raw.Avatar ?? null,
   };
 }

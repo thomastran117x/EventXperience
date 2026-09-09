@@ -6,6 +6,8 @@ export interface PresenceStackUser {
   userId: number;
   name: string | null;
   username: string | null;
+  /** The username as its owner wrote it. Render this; link by `username`. */
+  usernameDisplay?: string | null;
   avatar: string | null;
 }
 
@@ -37,7 +39,7 @@ export class PresenceStackComponent {
   }
 
   displayName(user: PresenceStackUser): string {
-    return user.name ?? user.username ?? `User #${user.userId}`;
+    return user.name ?? user.usernameDisplay ?? user.username ?? `User #${user.userId}`;
   }
 
   trackByUserId(_index: number, user: PresenceStackUser): number {

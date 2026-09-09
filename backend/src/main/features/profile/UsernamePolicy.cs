@@ -5,16 +5,37 @@ using backend.main.shared.exceptions.http;
 namespace backend.main.features.profile;
 
 /// <summary>
+/// The two forms of a username: the key everything looks up by, and the form shown to people.
+/// </summary>
+/// <remarks>
+/// The display form may differ from the username only by letter case. Nothing else is a legal
+/// difference, and nothing may look an account up by the display form.
+/// </remarks>
+/// <param name="Username">The normalised, lowercase key. Unique, indexed, hashed into the bloom filter.</param>
+/// <param name="Display">The trimmed form as the owner wrote it, for rendering only.</param>
+public readonly record struct UsernameForms(string Username, string Display);
+
+/// <summary>
 /// The normalisation and format rules for account usernames.
 /// </summary>
 /// <remarks>
-/// The split between <see cref="Normalize"/> and <see cref="NormalizeAndValidate"/> is the whole
-/// contract: <b>lookup paths call <see cref="Normalize"/> and get no format rules; only write paths
+/// Two contracts live here, and both are load-bearing.
+///
+/// <b>Lookup paths call <see cref="Normalize"/> and get no format rules; only write paths
 /// validate.</b> Rows that predate this policy do not satisfy it — the
 /// <c>20260815023000_backfillusernames</c> migration derived usernames from the email local part
 /// keeping <c>a-zA-Z0-9._-</c> without lowercasing, with no minimum length and no guard against
 /// leading, trailing, or repeated separators. Applying the format rules to a lookup would lock those
 /// accounts out of login and 400 their public profiles, so a reader must never do it.
+///
+/// <b><c>User.UsernameDisplay</c> is presentation only.</b> It is never a lookup key, never a route
+/// parameter, never a join or comparison, and never a value a client sends back. The invariant that
+/// keeps it safe is <c>Normalize(display) == Username</c>, which write paths establish through
+/// <see cref="NormalizeAndValidateWithDisplay"/> and re-check with <see cref="IsValidDisplayFor"/>.
+///
+/// Note that mixed case has always been <i>accepted</i> here — <see cref="NormalizeAndValidate"/>
+/// lowercases before it validates, so <c>ThomasT</c> passed long before a display column existed.
+/// The display form captures what was previously discarded; it relaxes no rule.
 ///
 /// The frontend mirrors these rules in
 /// <c>frontend/src/app/features/auth/validators/username-format.validator.ts</c>; the two must be
@@ -32,8 +53,13 @@ public static class UsernamePolicy
     /// The one message covering the charset and placement rules, kept as a single string so the
     /// frontend mirror does not have to reproduce a decision tree to say the same thing.
     /// </summary>
+    /// <remarks>
+    /// This deliberately does not say "lowercase". The stored key is lowercased, but the case the
+    /// owner typed is preserved in <c>User.UsernameDisplay</c> and shown back to them, so telling
+    /// them their capitals are disallowed would be untrue.
+    /// </remarks>
     public const string FormatMessage =
-        "Username may use only lowercase letters, numbers, and . _ -, "
+        "Username may use only letters, numbers, and . _ -, "
         + "must start and end with a letter or number, and cannot repeat . _ -.";
 
     /// <summary>
@@ -98,11 +124,34 @@ public static class UsernamePolicy
     }
 
     /// <summary>
-    /// Normalises and enforces the format rules. Use on write paths only.
+    /// Whether a display form is a legal presentation of an already-normalised username — that is,
+    /// whether it differs from it by letter case alone.
     /// </summary>
-    public static string NormalizeAndValidate(string? username)
+    /// <remarks>
+    /// A write path that takes a display form from anywhere other than
+    /// <see cref="NormalizeAndValidateWithDisplay"/> — a cached signup payload, a seeder, a caller
+    /// that set the property by hand — must re-check it here rather than trust it.
+    ///
+    /// Checking the charset as well as the normalised form is load-bearing, not belt-and-braces:
+    /// lowercasing is lossy across scripts, so a value can normalise to clean ASCII while the
+    /// display itself is not. See <see cref="IsDisplayCharset"/>.
+    /// </remarks>
+    public static bool IsValidDisplayFor(string normalizedUsername, string? display) =>
+        display is not null
+        && IsDisplayCharset(display)
+        && Normalize(display) == normalizedUsername;
+
+    /// <summary>
+    /// Normalises and enforces the format rules, returning both the lookup key and the display
+    /// form. Use on write paths only.
+    /// </summary>
+    public static UsernameForms NormalizeAndValidateWithDisplay(string? username)
     {
-        var normalized = Normalize(username);
+        // Trimmed but not lowercased, so the two forms differ only by case and the
+        // Normalize(Display) == Username invariant holds by construction.
+        var display = (username ?? string.Empty).Trim();
+        var normalized = display.ToLowerInvariant();
+
         if (normalized.Length == 0)
             throw new BadRequestException("Username is required.");
 
@@ -115,11 +164,58 @@ public static class UsernamePolicy
         if (!IsWellFormed(normalized))
             throw new BadRequestException(FormatMessage);
 
+        // IsWellFormed sees only the lowercased value, and lowercasing is lossy across scripts, so
+        // it is not sufficient on its own: U+212A KELVIN SIGN lowercases to an ASCII 'k', which
+        // means "Kelvin" normalises to a perfectly clean "kelvin" and passes every check
+        // above — while the string actually stored and rendered is a non-ASCII homoglyph.
+        //
+        // That breaks the "differ by letter case alone" invariant, and it is worse than cosmetic:
+        // the CK_Users_UsernameDisplay_Normalizes constraint compares PostgreSQL's lower() against
+        // the stored key, and PostgreSQL's lower() is collation-dependent. Where it declines to map
+        // U+212A the way ToLowerInvariant does, the row fails the constraint and an ordinary signup
+        // becomes a 500 instead of a 400.
+        if (!IsDisplayCharset(display))
+            throw new BadRequestException(FormatMessage);
+
         // Deliberately vague: naming the list would tell a caller which handles to go looking for.
         if (ReservedNames.Contains(normalized))
             throw new BadRequestException("That username is not available.");
 
-        return normalized;
+        return new UsernameForms(normalized, display);
+    }
+
+    /// <summary>
+    /// Normalises and enforces the format rules. Use on write paths only.
+    /// </summary>
+    /// <remarks>
+    /// Delegates so there is exactly one copy of the rules. A caller that stores the result should
+    /// prefer <see cref="NormalizeAndValidateWithDisplay"/> and keep the display form too.
+    /// </remarks>
+    public static string NormalizeAndValidate(string? username) =>
+        NormalizeAndValidateWithDisplay(username).Username;
+
+    /// <summary>
+    /// Whether a display form is drawn only from the characters a username may contain, allowing
+    /// uppercase letters as the one difference from the normalised key.
+    /// </summary>
+    /// <remarks>
+    /// Placement, length and the reserved list are all decided on the normalised value; this asks
+    /// the one question lowercasing can hide, which is whether the display is ASCII at all.
+    /// </remarks>
+    private static bool IsDisplayCharset(string display)
+    {
+        foreach (var character in display)
+        {
+            var allowed = character is >= 'a' and <= 'z'
+                or >= 'A' and <= 'Z'
+                or >= '0' and <= '9'
+                || IsSeparator(character);
+
+            if (!allowed)
+                return false;
+        }
+
+        return true;
     }
 
     // Restricted to ASCII on purpose. Normalize lowercases with the invariant culture, so a value

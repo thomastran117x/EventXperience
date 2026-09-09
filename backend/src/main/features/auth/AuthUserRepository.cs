@@ -23,7 +23,25 @@ namespace backend.main.features.auth
         {
             user.Usertype = AuthRoles.NormalizeStored(user.Usertype);
             if (!string.IsNullOrWhiteSpace(user.Username))
-                user.Username = UsernamePolicy.NormalizeAndValidate(user.Username);
+            {
+                var forms = UsernamePolicy.NormalizeAndValidateWithDisplay(user.Username);
+                user.Username = forms.Username;
+
+                // The choke point for the display invariant. Every account creation passes through
+                // here, so re-deriving the display when the caller did not set one — or set one that
+                // does not normalise back to the username — makes Normalize(display) == Username
+                // hold regardless of which caller is wrong. It also covers the rollout: a signup
+                // that was stashed in a verification token before this column existed deserialises
+                // with a null display and is repaired here rather than stored inconsistent.
+                if (!UsernamePolicy.IsValidDisplayFor(forms.Username, user.UsernameDisplay))
+                    user.UsernameDisplay = forms.Display;
+            }
+            else
+            {
+                // No username means no display. Leaving a stale one would be a row whose only
+                // rendered handle belongs to a name the account does not hold.
+                user.UsernameDisplay = null;
+            }
 
             var strategy = _context.Database.CreateExecutionStrategy();
             return await strategy.ExecuteAsync(async () =>
@@ -264,6 +282,7 @@ namespace backend.main.features.auth
                     Usertype = AuthRoles.NormalizeStored(u.Usertype),
                     Name = u.Name,
                     Username = u.Username,
+                    UsernameDisplay = u.UsernameDisplay,
                     UsernameChangeAvailableAtUtc = u.UsernameChangeAvailableAtUtc,
                     Avatar = u.Avatar,
                     Address = u.Address,
@@ -422,6 +441,9 @@ namespace backend.main.features.auth
                     Id = u.Id,
                     Email = u.Email,
                     Username = string.IsNullOrWhiteSpace(u.Username) ? u.Email : u.Username,
+                    UsernameDisplay = string.IsNullOrWhiteSpace(u.Username)
+                        ? u.Email
+                        : (u.UsernameDisplay ?? u.Username),
                     Name = u.Name,
                     Avatar = u.Avatar,
                     Usertype = AuthRoles.NormalizeStored(u.Usertype),
@@ -457,6 +479,9 @@ namespace backend.main.features.auth
                     Id = user.Id,
                     Email = user.Email,
                     Username = string.IsNullOrWhiteSpace(user.Username) ? user.Email : user.Username,
+                    UsernameDisplay = string.IsNullOrWhiteSpace(user.Username)
+                        ? user.Email
+                        : (user.UsernameDisplay ?? user.Username),
                     Name = user.Name,
                     Avatar = user.Avatar,
                     Usertype = AuthRoles.NormalizeStored(user.Usertype),
@@ -475,6 +500,9 @@ namespace backend.main.features.auth
                     Id = u.Id,
                     Email = u.Email,
                     Username = string.IsNullOrWhiteSpace(u.Username) ? u.Email : u.Username,
+                    UsernameDisplay = string.IsNullOrWhiteSpace(u.Username)
+                        ? u.Email
+                        : (u.UsernameDisplay ?? u.Username),
                     Name = u.Name,
                     Avatar = u.Avatar,
                     Usertype = AuthRoles.NormalizeStored(u.Usertype),
@@ -527,9 +555,51 @@ namespace backend.main.features.auth
                     && reservation.ReservedUntilUtc > utcNow);
         }
 
+        public async Task<IReadOnlySet<string>> FindUnavailableUsernamesAsync(
+            IReadOnlyCollection<string> usernames,
+            DateTime utcNow,
+            CancellationToken cancellationToken = default)
+        {
+            if (usernames.Count == 0)
+                return new HashSet<string>(StringComparer.Ordinal);
+
+            // Distinct so a repeated candidate cannot widen the IN list, and materialised once
+            // because EF translates the same local collection into both halves of the union.
+            var candidates = usernames.Distinct(StringComparer.Ordinal).ToList();
+
+            // The same predicate as UsernameUnavailableAsync, evaluated over a set: a name is taken
+            // if a user holds it or an unexpired reservation still covers it. Both halves have to be
+            // asked, or a name cooling down after a rename would be offered as free.
+            var held = _context.Users
+                .AsNoTracking()
+                .Where(user => user.Username != null && candidates.Contains(user.Username))
+                .Select(user => user.Username!);
+
+            var reserved = _context.UsernameReservations
+                .AsNoTracking()
+                .Where(reservation =>
+                    candidates.Contains(reservation.Username)
+                    && reservation.ReservedUntilUtc > utcNow)
+                .Select(reservation => reservation.Username);
+
+            // Composed into a single UNION rather than awaited one after the other. Awaiting each
+            // half separately would be two round trips per call, and the generator can call this
+            // once per draw — so the batching this method exists for would be half undone.
+            var names = await held.Union(reserved).ToListAsync(cancellationToken);
+
+            // Username is citext, so the database may return a different casing than was asked for.
+            // Normalize on the way out so the caller can match on the string it passed in.
+            var taken = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var username in names)
+                taken.Add(UsernamePolicy.Normalize(username));
+
+            return taken;
+        }
+
         public async Task<UsernameChangeRecord> ChangeUsernameAsync(
             int userId,
             string username,
+            string usernameDisplay,
             DateTime utcNow,
             DateTime reservedUntilUtc)
         {
@@ -560,7 +630,24 @@ namespace backend.main.features.auth
                         : UsernamePolicy.Normalize(user.Username);
 
                     if (currentUsername == username)
-                        return new UsernameChangeRecord(UsernameChangeStatus.Unchanged, user);
+                    {
+                        // Same key, different casing — thomast -> ThomasT. Nothing moved: no link
+                        // breaks, no name is released for someone else to take, and no reservation
+                        // is warranted. So this updates the display alone and deliberately leaves
+                        // UsernameChangeAvailableAtUtc untouched; spending a 30-day cooldown on a
+                        // capitalisation fix would strand the owner for a month over cosmetics.
+                        if (UsernamePolicy.IsValidDisplayFor(username, user.UsernameDisplay)
+                            && string.Equals(user.UsernameDisplay, usernameDisplay, StringComparison.Ordinal))
+                        {
+                            return new UsernameChangeRecord(UsernameChangeStatus.Unchanged, user);
+                        }
+
+                        user.UsernameDisplay = usernameDisplay;
+                        user.UpdatedAt = utcNow;
+                        await _context.SaveChangesAsync();
+                        await transaction.CommitAsync();
+                        return new UsernameChangeRecord(UsernameChangeStatus.Changed, user);
+                    }
 
                     if (currentUsername != null
                         && user.UsernameChangeAvailableAtUtc is DateTime availableAtUtc
@@ -610,6 +697,7 @@ namespace backend.main.features.auth
                     }
 
                     user.Username = username;
+                    user.UsernameDisplay = usernameDisplay;
                     user.UsernameChangeAvailableAtUtc = currentUsername == null
                         ? null
                         : reservedUntilUtc;
@@ -794,6 +882,9 @@ namespace backend.main.features.auth
                     Id = u.Id,
                     Email = u.Email,
                     Username = string.IsNullOrWhiteSpace(u.Username) ? u.Email : u.Username,
+                    UsernameDisplay = string.IsNullOrWhiteSpace(u.Username)
+                        ? u.Email
+                        : (u.UsernameDisplay ?? u.Username),
                     Name = u.Name,
                     Avatar = u.Avatar,
                     Usertype = AuthRoles.NormalizeStored(u.Usertype),
@@ -810,6 +901,9 @@ namespace backend.main.features.auth
                 Id = u.Id,
                 Email = u.Email,
                 Username = string.IsNullOrWhiteSpace(u.Username) ? u.Email : u.Username,
+                UsernameDisplay = string.IsNullOrWhiteSpace(u.Username)
+                    ? u.Email
+                    : (u.UsernameDisplay ?? u.Username),
                 Name = u.Name,
                 Avatar = u.Avatar,
                 Usertype = AuthRoles.NormalizeStored(u.Usertype),

@@ -66,6 +66,7 @@ type AuthorInfoPayload = Partial<AuthorInfo> & {
   Id?: number;
   Name?: string | null;
   Username?: string | null;
+  UsernameDisplay?: string | null;
   Avatar?: string | null;
 };
 
@@ -198,5 +199,10 @@ export function normalizeClubDiscussionsPagedData(
 
 /** Display name for a discussion's author, falling back through name → username → user id. */
 export function discussionAuthorName(discussion: ClubDiscussion): string {
-  return discussion.author?.name ?? discussion.author?.username ?? `User #${discussion.userId}`;
+  return (
+    discussion.author?.name ??
+    discussion.author?.usernameDisplay ??
+    discussion.author?.username ??
+    `User #${discussion.userId}`
+  );
 }

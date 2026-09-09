@@ -6,8 +6,9 @@ import {
   describeUsernameProblem,
   isValidUsernameFormat,
   isWellFormedUsername,
+  isDisplayCharset,
   normalizeUsername,
-  suggestUsernameFromEmail,
+  toUsernameDisplay,
   usernameFormatValidator,
 } from './username-format.validator';
 
@@ -123,39 +124,54 @@ describe('usernameFormatValidator', () => {
   });
 });
 
-describe('suggestUsernameFromEmail', () => {
-  it('lowercases and keeps the legal characters of the local part', () => {
-    expect(suggestUsernameFromEmail('Ada.Lovelace@example.com')).toBe('ada.lovelace');
+describe('toUsernameDisplay', () => {
+  it('trims but does not lowercase, so the server can keep the casing', () => {
+    expect(toUsernameDisplay('  ThomasT  ')).toBe('ThomasT');
+    expect(toUsernameDisplay('SmartCat23')).toBe('SmartCat23');
   });
 
-  it('collapses runs of separators and trims them from the edges', () => {
-    expect(suggestUsernameFromEmail('..ada..lovelace..@example.com')).toBe('ada.lovelace');
+  it('normalises to the same value the availability probe uses', () => {
+    expect(normalizeUsername(toUsernameDisplay('  ThomasT  '))).toBe('thomast');
   });
 
-  it('drops characters that are not legal in a username', () => {
-    expect(suggestUsernameFromEmail('ada+tag@example.com')).toBe('adatag');
+  it('treats a missing value as empty rather than throwing', () => {
+    expect(toUsernameDisplay(null as unknown as string)).toBe('');
+    expect(toUsernameDisplay(undefined as unknown as string)).toBe('');
+  });
+});
+
+describe('mixed case', () => {
+  it('accepts capitals, which the validator has always normalised away rather than rejected', () => {
+    expect(describeUsernameProblem(normalizeUsername('ThomasT'))).toBeNull();
   });
 
-  it('truncates a long local part without leaving a trailing separator', () => {
-    expect(suggestUsernameFromEmail(`${'a'.repeat(30)}.tail@example.com`)).toBe('a'.repeat(30));
+  it('no longer tells the user their username must be lowercase', () => {
+    expect(USERNAME_FORMAT_HINT).not.toContain('lowercase');
+  });
+});
+
+describe('homoglyph display characters', () => {
+  // U+212A KELVIN SIGN lowercases to an ASCII 'k', so the normalised form is a clean 'kelvin' and
+  // every rule that inspects it passes — while the value the server would store is not ASCII.
+  const kelvin = 'Kelvin';
+
+  it('normalises to something that looks entirely valid', () => {
+    expect(normalizeUsername(kelvin)).toBe('kelvin');
+    expect(describeUsernameProblem(normalizeUsername(kelvin))).toBeNull();
   });
 
-  // A guess that could not be submitted would prefill the field with an error, so return nothing.
-  it('treats a missing address as empty', () => {
-    expect(suggestUsernameFromEmail(undefined as unknown as string)).toBe('');
+  it('is rejected anyway, because the stored form is checked too', () => {
+    const control = new FormControl(kelvin);
+
+    expect(isDisplayCharset(kelvin)).toBeFalse();
+    expect(usernameFormatValidator(control)).toEqual({
+      usernameFormat: { message: USERNAME_FORMAT_HINT },
+    });
   });
 
-  it('returns an empty string when no usable name can be derived', () => {
-    expect(suggestUsernameFromEmail('ab@example.com')).toBe('');
-    expect(suggestUsernameFromEmail('..@example.com')).toBe('');
-    expect(suggestUsernameFromEmail('admin@example.com')).toBe('');
-    expect(suggestUsernameFromEmail('')).toBe('');
-  });
-
-  it('produces a value the format validator accepts', () => {
-    const suggestion = suggestUsernameFromEmail('Grace.Hopper@example.com');
-
-    expect(suggestion).not.toBe('');
-    expect(isValidUsernameFormat(normalizeUsername(suggestion))).toBeTrue();
+  it('still accepts ordinary mixed case and separators', () => {
+    expect(isDisplayCharset('SmartCat23')).toBeTrue();
+    expect(isDisplayCharset('a.b_c-d')).toBeTrue();
+    expect(usernameFormatValidator(new FormControl('SmartCat23'))).toBeNull();
   });
 });

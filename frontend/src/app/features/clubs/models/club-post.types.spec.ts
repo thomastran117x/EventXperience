@@ -14,6 +14,7 @@ describe('normalizeAuthor', () => {
       id: 3,
       name: 'Jamie',
       username: 'jamie',
+      usernameDisplay: 'jamie',
       avatar: null,
     });
 
@@ -27,12 +28,26 @@ describe('normalizeAuthor', () => {
 
   it('prefers the camelCase key when both casings are present', () => {
     expect(
-      normalizeAuthor({ id: 1, Id: 99, name: 'Camel', Name: 'Pascal', username: 'c', avatar: 'a' }),
-    ).toEqual({ id: 1, name: 'Camel', username: 'c', avatar: 'a' });
+      normalizeAuthor({
+        id: 1,
+        Id: 99,
+        name: 'Camel',
+        Name: 'Pascal',
+        username: 'c',
+        usernameDisplay: 'c',
+        avatar: 'a',
+      }),
+    ).toEqual({ id: 1, name: 'Camel', username: 'c', usernameDisplay: 'c', avatar: 'a' });
   });
 
   it('defaults an author object that carries nothing', () => {
-    expect(normalizeAuthor({})).toEqual({ id: 0, name: null, username: null, avatar: null });
+    expect(normalizeAuthor({})).toEqual({
+      id: 0,
+      name: null,
+      username: null,
+      usernameDisplay: null,
+      avatar: null,
+    });
   });
 });
 
@@ -84,7 +99,7 @@ describe('normalizeClubPost', () => {
       viewCount: 42,
       commentCount: 5,
       isPinned: true,
-      author: { id: 3, name: 'Jamie', username: null, avatar: null },
+      author: { id: 3, name: 'Jamie', username: null, usernameDisplay: null, avatar: null },
       createdAt: '2026-01-01T00:00:00Z',
       updatedAt: '2026-01-02T00:00:00Z',
     });
@@ -141,7 +156,7 @@ describe('normalizePostComment', () => {
       parentCommentId: null,
       userId: 7,
       content: 'Nice',
-      author: { id: 7, name: null, username: 'jamie', avatar: null },
+      author: { id: 7, name: null, username: 'jamie', usernameDisplay: 'jamie', avatar: null },
       isDeleted: false,
       createdAt: '2026-01-03T00:00:00Z',
       updatedAt: '2026-01-03T00:00:00Z',

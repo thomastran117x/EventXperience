@@ -145,3 +145,29 @@
   opacity: 0.7;
   cursor: progress;
 }
+
+/*
+ * The suggestion chips ship with Tailwind design tokens, which this page does not use. Rather than
+ * migrate the whole page's styling inside a feature change, restate the few colours here so the
+ * chips read correctly against the dark card. Remove this block if the page moves onto the tokens.
+ */
+.oauth-role-suggestions span {
+  color: rgba(226, 232, 240, 0.62);
+}
+
+.oauth-role-suggestions button {
+  border-color: rgba(148, 163, 184, 0.28);
+  color: rgba(226, 232, 240, 0.82);
+  background: rgba(15, 23, 42, 0.35);
+}
+
+.oauth-role-suggestions button:hover {
+  border-color: rgba(148, 163, 184, 0.55);
+  color: #f8fafc;
+}
+
+.oauth-role-suggestions button[aria-pressed='true'] {
+  border-color: rgba(56, 189, 248, 0.75);
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.12);
+}

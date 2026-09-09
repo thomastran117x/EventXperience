@@ -35,6 +35,14 @@ namespace backend.main.features.clubs.contracts.responses
         {
             get; set;
         }
+
+        /// <summary>
+        /// The username as its owner wrote it. Render this; link and look up by <c>Username</c>.
+        /// </summary>
+        public string? UsernameDisplay
+        {
+            get; set;
+        }
         public string? Avatar
         {
             get; set;
@@ -50,7 +58,8 @@ namespace backend.main.features.clubs.contracts.responses
             DateTime updatedAt,
             string? name = null,
             string? username = null,
-            string? avatar = null)
+            string? avatar = null,
+            string? usernameDisplay = null)
         {
             Id = id;
             ClubId = clubId;
@@ -61,6 +70,7 @@ namespace backend.main.features.clubs.contracts.responses
             UpdatedAt = updatedAt;
             Name = name;
             Username = username;
+            UsernameDisplay = usernameDisplay;
             Avatar = avatar;
         }
     }

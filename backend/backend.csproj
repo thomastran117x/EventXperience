@@ -59,6 +59,16 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Explicit LogicalNames: the default manifest name is derived from the folder path, so a
+         rename would break UsernameWordLists' lookup silently at runtime. The None Remove is
+         required first, or the SDK's default None glob and this EmbeddedResource collide. -->
+    <None Remove="src\main\features\profile\suggestions\wordlists\*.txt" />
+    <EmbeddedResource Include="src\main\features\profile\suggestions\wordlists\adjectives.txt" LogicalName="UsernameWordLists.adjectives.txt" />
+    <EmbeddedResource Include="src\main\features\profile\suggestions\wordlists\nouns.txt" LogicalName="UsernameWordLists.nouns.txt" />
+    <EmbeddedResource Include="src\main\features\profile\suggestions\wordlists\denied-substrings.txt" LogicalName="UsernameWordLists.denied-substrings.txt" />
+  </ItemGroup>
+
+  <ItemGroup>
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
       <_Parameter1>backend.tests.Unit</_Parameter1>
     </AssemblyAttribute>

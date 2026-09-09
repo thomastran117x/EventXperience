@@ -26,6 +26,7 @@ namespace backend.main.features.profile
         Task<UsernameChangeRecord> ChangeUsernameAsync(
             int userId,
             string username,
+            string usernameDisplay,
             DateTime utcNow,
             DateTime reservedUntilUtc
         );

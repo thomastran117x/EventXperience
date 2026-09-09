@@ -165,6 +165,7 @@ public class AuthUserRepositoryTests
         var changed = await harness.Repository.ChangeUsernameAsync(
             user.Id,
             "strategy-renamed",
+            "strategy-renamed",
             now,
             now.AddDays(30));
 
@@ -453,6 +454,7 @@ public class AuthUserRepositoryTests
         var result = await harness.Repository.ChangeUsernameAsync(
             userId,
             "new-name",
+            "new-name",
             now,
             availableAt);
 
@@ -483,11 +485,13 @@ public class AuthUserRepositoryTests
         (await harness.Repository.ChangeUsernameAsync(
             userId,
             "second-name",
+            "second-name",
             now,
             availableAt)).Status.Should().Be(UsernameChangeStatus.Changed);
 
         var blocked = await harness.Repository.ChangeUsernameAsync(
             userId,
+            "third-name",
             "third-name",
             availableAt.AddTicks(-1),
             availableAt.AddDays(30));
@@ -496,6 +500,7 @@ public class AuthUserRepositoryTests
 
         var allowed = await harness.Repository.ChangeUsernameAsync(
             userId,
+            "third-name",
             "third-name",
             availableAt,
             availableAt.AddDays(30));
@@ -512,6 +517,7 @@ public class AuthUserRepositoryTests
         var first = await harness.Repository.ChangeUsernameAsync(
             userId,
             "first-name",
+            "first-name",
             now,
             now.AddDays(30));
 
@@ -520,6 +526,7 @@ public class AuthUserRepositoryTests
 
         var second = await harness.Repository.ChangeUsernameAsync(
             userId,
+            "second-name",
             "second-name",
             now.AddMinutes(1),
             now.AddDays(30).AddMinutes(1));
@@ -555,6 +562,166 @@ public class AuthUserRepositoryTests
         (await harness.Repository.GetByIdsAsync([], UserReadDetailLevel.Slim)).Should().BeEmpty();
         (await harness.Repository.EmailExistsAsync("first@example.com")).Should().BeTrue();
         (await harness.Repository.EmailExistsAsync("missing@example.com")).Should().BeFalse();
+    }
+
+    /// <summary>
+    /// The batched lookup composes two tables into one query. A union that lost either half would
+    /// still look correct for most inputs, so both halves and the expiry boundary are pinned here:
+    /// dropping the reservations half would hand out names that are still cooling down after a
+    /// rename, and dropping the users half would hand out names that are simply taken.
+    /// </summary>
+    [Fact]
+    public async Task FindUnavailableUsernamesAsync_ShouldReportHeldAndReservedNamesTogether()
+    {
+        await using var harness = await AuthUserRepositoryHarness.CreateAsync();
+        var utcNow = new DateTime(2026, 9, 8, 12, 0, 0, DateTimeKind.Utc);
+        var ownerId = await harness.SeedUserAsync(
+            email: "holder@example.com", username: "held-name");
+        harness.Db.UsernameReservations.Add(new UsernameReservation
+        {
+            Username = "cooling-name",
+            UserId = ownerId,
+            ReservedUntilUtc = utcNow.AddDays(1),
+        });
+        harness.Db.UsernameReservations.Add(new UsernameReservation
+        {
+            Username = "released-name",
+            UserId = ownerId,
+            ReservedUntilUtc = utcNow.AddMinutes(-1),
+        });
+        await harness.Db.SaveChangesAsync();
+
+        var taken = await harness.Repository.FindUnavailableUsernamesAsync(
+            ["held-name", "cooling-name", "released-name", "never-used"],
+            utcNow);
+
+        taken.Should().BeEquivalentTo(["held-name", "cooling-name"]);
+    }
+
+    [Fact]
+    public async Task FindUnavailableUsernamesAsync_ShouldReportNothing_WhenGivenNothing()
+    {
+        await using var harness = await AuthUserRepositoryHarness.CreateAsync();
+
+        var taken = await harness.Repository.FindUnavailableUsernamesAsync(
+            [], DateTime.UtcNow);
+
+        taken.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// GetUserAsync hand-projects a sanitised User rather than returning the tracked entity, so any
+    /// column added to the table has to be added here too. Missing this is invisible on the write
+    /// path — the row is stored correctly — and only shows up as the display form reverting to the
+    /// lowercase key on every read, which is exactly what shipped before this test existed.
+    /// </summary>
+    [Fact]
+    public async Task GetUserAsync_ShouldProjectTheDisplayForm()
+    {
+        await using var harness = await AuthUserRepositoryHarness.CreateAsync();
+        var created = await harness.Repository.CreateUserAsync(new User
+        {
+            Email = "projected@example.com",
+            Username = "ThomasT",
+            Password = "hashed-password",
+            Usertype = "participant"
+        });
+
+        var fetched = await harness.Repository.GetUserAsync(created.Id);
+
+        fetched.Should().NotBeNull();
+        fetched!.Username.Should().Be("thomast");
+        fetched.UsernameDisplay.Should().Be("ThomasT");
+    }
+
+    /// <summary>
+    /// The choke point: every account creation passes through here, so a caller that supplies no
+    /// display form — a signup stashed in a verification token before the column existed — still
+    /// lands a row satisfying Normalize(display) == Username.
+    /// </summary>
+    [Fact]
+    public async Task CreateUserAsync_ShouldFillADisplayTheCallerOmitted()
+    {
+        await using var harness = await AuthUserRepositoryHarness.CreateAsync();
+
+        var created = await harness.Repository.CreateUserAsync(new User
+        {
+            Email = "no-display@example.com",
+            Username = "PlainName",
+            UsernameDisplay = null,
+            Password = "hashed-password",
+            Usertype = "participant"
+        });
+
+        created.Username.Should().Be("plainname");
+        created.UsernameDisplay.Should().Be("PlainName");
+    }
+
+    /// <summary>
+    /// A display that does not lowercase to the username is corruption, not a rename, so it is
+    /// replaced rather than trusted.
+    /// </summary>
+    [Fact]
+    public async Task CreateUserAsync_ShouldReplaceADisplayThatDoesNotMatchTheUsername()
+    {
+        await using var harness = await AuthUserRepositoryHarness.CreateAsync();
+
+        var created = await harness.Repository.CreateUserAsync(new User
+        {
+            Email = "mismatch@example.com",
+            Username = "realname",
+            UsernameDisplay = "SomethingElse",
+            Password = "hashed-password",
+            Usertype = "participant"
+        });
+
+        created.UsernameDisplay.Should().Be("realname");
+    }
+
+    /// <summary>
+    /// UserListRecord.UsernameDisplay is non-nullable, and the slim projection is the default one:
+    /// it backs GetByIdsAsync, which feeds club post, discussion, comment, review and follow author
+    /// lookups. A projection that skipped the column would leave a declared-non-null field null on
+    /// every non-admin read, so both detail levels are checked rather than just the admin one.
+    /// </summary>
+    [Theory]
+    [InlineData(UserReadDetailLevel.Slim)]
+    [InlineData(UserReadDetailLevel.Admin)]
+    public async Task GetByIdsAsync_ShouldProjectTheDisplayForm(UserReadDetailLevel detail)
+    {
+        await using var harness = await AuthUserRepositoryHarness.CreateAsync();
+        var created = await harness.Repository.CreateUserAsync(new User
+        {
+            Email = "listed@example.com",
+            Username = "ThomasT",
+            Password = "hashed-password",
+            Usertype = "participant"
+        });
+
+        var listed = await harness.Repository.GetByIdsAsync([created.Id], detail);
+
+        listed.Should().ContainSingle();
+        listed[0].Username.Should().Be("thomast");
+        listed[0].UsernameDisplay.Should().Be("ThomasT");
+    }
+
+    /// <summary>
+    /// A row that predates the display column reads back with the lookup key rather than null, so
+    /// the non-nullable contract holds for the backfill population too.
+    /// </summary>
+    [Fact]
+    public async Task GetByIdsAsync_ShouldFallBackToTheUsername_WhenNoDisplayWasStored()
+    {
+        await using var harness = await AuthUserRepositoryHarness.CreateAsync();
+        var userId = await harness.SeedUserAsync(
+            email: "legacy-list@example.com", username: "legacy-name");
+        var stored = await harness.Db.Users.SingleAsync(user => user.Id == userId);
+        stored.UsernameDisplay = null;
+        await harness.Db.SaveChangesAsync();
+
+        var listed = await harness.Repository.GetByIdsAsync([userId]);
+
+        listed[0].UsernameDisplay.Should().Be("legacy-name");
     }
 
     private sealed class AuthUserRepositoryHarness : IAsyncDisposable

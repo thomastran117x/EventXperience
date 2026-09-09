@@ -494,7 +494,8 @@ namespace backend.main.features.clubs
                 staff.UpdatedAt,
                 user?.Name,
                 user?.Username,
-                user?.Avatar
+                user?.Avatar,
+                user?.UsernameDisplay ?? user?.Username
             );
 
         private static ClubVersionListItemResponse MapToVersionListItemResponse(
@@ -512,7 +513,8 @@ namespace backend.main.features.clubs
                 item.ChangedFields.Select(MapToFieldChangeResponse).ToList(),
                 actor?.Name,
                 actor?.Username,
-                actor?.Avatar
+                actor?.Avatar,
+                ActorUsernameDisplay: actor?.UsernameDisplay ?? actor?.Username
             );
 
         private static ClubVersionDetailResponse MapToVersionDetailResponse(
@@ -542,7 +544,8 @@ namespace backend.main.features.clubs
                 ),
                 actor?.Name,
                 actor?.Username,
-                actor?.Avatar
+                actor?.Avatar,
+                ActorUsernameDisplay: actor?.UsernameDisplay ?? actor?.Username
             );
 
         private static ClubVersionFieldChangeResponse MapToFieldChangeResponse(ClubVersionFieldChange change) =>

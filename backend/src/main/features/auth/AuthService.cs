@@ -122,7 +122,8 @@ namespace backend.main.features.auth
         {
             try
             {
-                username = UsernamePolicy.NormalizeAndValidate(username);
+                var usernameForms = UsernamePolicy.NormalizeAndValidateWithDisplay(username);
+                username = usernameForms.Username;
 
                 // Only the lookup gets the lowercased form. The address carried forward keeps the
                 // casing the user typed, because it is the one we store and deliver mail to, and
@@ -146,6 +147,9 @@ namespace backend.main.features.auth
                 {
                     Email = email,
                     Username = username,
+                    // Carried through the verification token, or the casing typed here is lost by
+                    // the time the account is actually inserted on the verify step.
+                    UsernameDisplay = usernameForms.Display,
                     Password = hashedPassword,
                     Usertype = userType
                 };
@@ -189,7 +193,20 @@ namespace backend.main.features.auth
                     throw new ConflictException($"An account is already registered with the email: {user.Email}");
                 if (string.IsNullOrWhiteSpace(user.Username))
                     throw new BadRequestException("A username is required to complete signup.");
-                user.Username = UsernamePolicy.NormalizeAndValidate(user.Username);
+                // The username is derived from Username, never from UsernameDisplay. ComputeOtpProof
+                // deliberately does not bind the display form — adding it would invalidate every
+                // challenge minted before it existed — so deriving the account name from it would
+                // put the value that decides the username outside the integrity check.
+                //
+                // The display is therefore only adopted when it agrees with the bound username,
+                // which is exactly the casing it was stored with at signup. Anything else falls
+                // back, the same repair CreateUserAsync applies as a choke point.
+                var verifiedUsername = UsernamePolicy.NormalizeAndValidateWithDisplay(user.Username);
+                user.Username = verifiedUsername.Username;
+                user.UsernameDisplay =
+                    UsernamePolicy.IsValidDisplayFor(verifiedUsername.Username, user.UsernameDisplay)
+                        ? user.UsernameDisplay
+                        : verifiedUsername.Display;
                 if (await _usernameAvailability.IsUnavailableAsync(user.Username, DateTime.UtcNow))
                     throw new UsernameTakenException(user.Username);
 
@@ -231,7 +248,20 @@ namespace backend.main.features.auth
                     throw new ConflictException($"An account is already registered with the email: {user.Email}");
                 if (string.IsNullOrWhiteSpace(user.Username))
                     throw new BadRequestException("A username is required to complete signup.");
-                user.Username = UsernamePolicy.NormalizeAndValidate(user.Username);
+                // The username is derived from Username, never from UsernameDisplay. ComputeOtpProof
+                // deliberately does not bind the display form — adding it would invalidate every
+                // challenge minted before it existed — so deriving the account name from it would
+                // put the value that decides the username outside the integrity check.
+                //
+                // The display is therefore only adopted when it agrees with the bound username,
+                // which is exactly the casing it was stored with at signup. Anything else falls
+                // back, the same repair CreateUserAsync applies as a choke point.
+                var verifiedUsername = UsernamePolicy.NormalizeAndValidateWithDisplay(user.Username);
+                user.Username = verifiedUsername.Username;
+                user.UsernameDisplay =
+                    UsernamePolicy.IsValidDisplayFor(verifiedUsername.Username, user.UsernameDisplay)
+                        ? user.UsernameDisplay
+                        : verifiedUsername.Display;
                 if (await _usernameAvailability.IsUnavailableAsync(user.Username, DateTime.UtcNow))
                     throw new UsernameTakenException(user.Username);
 
@@ -582,7 +612,8 @@ namespace backend.main.features.auth
                 {
                     // Same shape as VerifyAsync: validate, check authoritatively because the insert
                     // is a few lines away, then create and record both names in the filters.
-                    var newUsername = UsernamePolicy.NormalizeAndValidate(username);
+                    var oauthUsername = UsernamePolicy.NormalizeAndValidateWithDisplay(username);
+                    var newUsername = oauthUsername.Username;
                     if (await _usernameAvailability.IsUnavailableAsync(newUsername, DateTime.UtcNow))
                         throw new UsernameTakenException(newUsername);
 
@@ -590,6 +621,7 @@ namespace backend.main.features.auth
                     {
                         Email = pending.Email,
                         Username = newUsername,
+                        UsernameDisplay = oauthUsername.Display,
                         Usertype = usertype,
                         GoogleID = pending.Provider == "google" ? pending.ProviderUserId : null,
                         MicrosoftID = pending.Provider == "microsoft"

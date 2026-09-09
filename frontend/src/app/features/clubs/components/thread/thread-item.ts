@@ -54,7 +54,12 @@ export function isGroupedWithPrevious(nodes: ThreadDisplayNode[], index: number)
 /** Display name, falling back through name → username → user id. */
 export function threadAuthorName(node: ThreadDisplayNode, deletedText: string): string {
   if (node.isDeleted) return deletedText;
-  return node.author?.name ?? node.author?.username ?? `User #${node.userId}`;
+  return (
+    node.author?.name ??
+    node.author?.usernameDisplay ??
+    node.author?.username ??
+    `User #${node.userId}`
+  );
 }
 
 /** Short relative time, switching to an absolute date after a week. */

@@ -138,11 +138,13 @@
                   <div
                     class="flex h-9 w-9 items-center justify-center rounded-2xl border border-accent/20 bg-accent/10 text-xs font-bold uppercase text-accent"
                   >
-                    {{ user.Username[0] }}
+                    {{ (user.UsernameDisplay || user.Username)[0] }}
                   </div>
                 }
                 <div class="text-left leading-tight">
-                  <div class="text-sm font-semibold text-content">{{ user.Username }}</div>
+                  <div class="text-sm font-semibold text-content">
+                    {{ user.UsernameDisplay || user.Username }}
+                  </div>
                   <div class="mt-1 text-[11px] uppercase tracking-[0.12em] text-subtle">
                     {{ user.Usertype }}
                   </div>
@@ -170,7 +172,7 @@
                 >
                   <div class="rounded-2xl border border-line bg-surface-muted px-4 py-3">
                     <div class="truncate text-sm font-semibold text-content">
-                      {{ user.Username }}
+                      {{ user.UsernameDisplay || user.Username }}
                     </div>
                     <div class="mt-0.5 truncate text-xs text-subtle">{{ user.Email }}</div>
                   </div>
@@ -427,12 +429,12 @@
                     <div
                       class="flex h-11 w-11 items-center justify-center rounded-2xl border border-accent/20 bg-accent/10 text-sm font-bold uppercase text-accent"
                     >
-                      {{ user.Username[0] }}
+                      {{ (user.UsernameDisplay || user.Username)[0] }}
                     </div>
                   }
                   <div class="min-w-0">
                     <div class="truncate text-sm font-semibold text-content">
-                      {{ user.Username }}
+                      {{ user.UsernameDisplay || user.Username }}
                     </div>
                     <div class="mt-0.5 truncate text-xs text-subtle">{{ user.Email }}</div>
                   </div>

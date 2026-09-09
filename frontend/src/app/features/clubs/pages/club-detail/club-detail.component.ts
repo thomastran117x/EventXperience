@@ -358,7 +358,7 @@ export class ClubDetailComponent implements OnInit, OnDestroy {
   }
 
   reviewerName(review: ClubReview): string {
-    return review.name || review.username || `User #${review.userId}`;
+    return review.name || review.usernameDisplay || review.username || `User #${review.userId}`;
   }
 
   starsFor(rating: number): number[] {
@@ -551,7 +551,12 @@ export class ClubDetailComponent implements OnInit, OnDestroy {
   }
 
   authorDisplay(post: ClubPost): string {
-    return post.author?.name ?? post.author?.username ?? `User #${post.userId}`;
+    return (
+      post.author?.name ??
+      post.author?.usernameDisplay ??
+      post.author?.username ??
+      `User #${post.userId}`
+    );
   }
 
   formatDate(iso: string): string {

@@ -67,6 +67,7 @@ export function makeClubMember(overrides: Partial<ClubMember> = {}): ClubMember 
     createdAt: '2026-01-01T00:00:00Z',
     name: 'Jamie Rivers',
     username: 'jrivers',
+    usernameDisplay: 'jrivers',
     avatar: null,
     ...overrides,
   };
@@ -79,7 +80,13 @@ export function makeClubDiscussion(overrides: Partial<ClubDiscussion> = {}): Clu
     userId: 2,
     title: 'Weekend ride',
     description: 'Where should we go this Saturday?',
-    author: { id: 2, name: 'Jamie Rivers', username: 'jrivers', avatar: null },
+    author: {
+      id: 2,
+      name: 'Jamie Rivers',
+      username: 'jrivers',
+      usernameDisplay: 'jrivers',
+      avatar: null,
+    },
     createdAt: '2026-08-01T00:00:00Z',
     updatedAt: '2026-08-01T00:00:00Z',
     replyCount: 0,

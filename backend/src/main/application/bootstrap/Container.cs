@@ -38,6 +38,7 @@ using backend.main.features.events.waitlist;
 using backend.main.features.payment;
 using backend.main.features.profile;
 using backend.main.features.profile.email;
+using backend.main.features.profile.suggestions;
 using backend.main.infrastructure.database.repository;
 using backend.main.infrastructure.elasticsearch;
 using backend.main.seeders;
@@ -248,6 +249,7 @@ namespace backend.main.application.bootstrap
             // answer, so they behave correctly with the feature off.
             services.AddScoped<IUsernameAvailabilityService, UsernameAvailabilityService>();
             services.AddScoped<IEmailAvailabilityService, EmailAvailabilityService>();
+            services.AddScoped<IUsernameSuggestionService, UsernameSuggestionService>();
             services.AddScoped<IAzureBlobService, AzureBlobService>();
             services.AddScoped<OrphanBlobCleanupRunner>();
 

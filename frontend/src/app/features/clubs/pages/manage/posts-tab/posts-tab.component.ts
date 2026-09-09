@@ -209,7 +209,12 @@ export class PostsTabComponent implements OnInit {
   }
 
   authorDisplay(post: ClubPost): string {
-    return post.author?.name ?? post.author?.username ?? `User #${post.userId}`;
+    return (
+      post.author?.name ??
+      post.author?.usernameDisplay ??
+      post.author?.username ??
+      `User #${post.userId}`
+    );
   }
 
   private load(): void {

@@ -149,6 +149,7 @@ namespace backend.main.features.clubs.discussions
                     Id = discussion.UserId,
                     Name = author?.Name,
                     Username = author?.Username,
+                    UsernameDisplay = author?.UsernameDisplay ?? author?.Username,
                     Avatar = author?.Avatar
                 }
             };

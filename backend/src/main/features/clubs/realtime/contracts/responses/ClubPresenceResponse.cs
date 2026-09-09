@@ -1,7 +1,16 @@
 namespace backend.main.features.clubs.realtime.contracts.responses;
 
-/// <summary>A single online member, as broadcast to club subscribers.</summary>
-public sealed record PresenceUser(int UserId, string? Name, string? Username, string? Avatar);
+/// <summary>
+/// A single online member, as broadcast to club subscribers.
+/// </summary>
+/// <param name="Username">The lookup key: links and lookups use this.</param>
+/// <param name="UsernameDisplay">The form to render, as its owner wrote it.</param>
+public sealed record PresenceUser(
+    int UserId,
+    string? Name,
+    string? Username,
+    string? Avatar,
+    string? UsernameDisplay = null);
 
 /// <summary>
 /// The full roster, sent once to a caller when it joins a club.

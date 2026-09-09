@@ -1184,6 +1184,87 @@ public class AuthServiceTests
     }
 
     /// <summary>
+    /// The display casing typed at signup survives the verification round trip; without this the
+    /// column would only ever hold the lowercase key for local signups.
+    /// </summary>
+    [Fact]
+    public async Task VerifyAsync_ShouldKeepTheDisplayCasingCarriedByTheToken()
+    {
+        var user = new backend.main.features.profile.User
+        {
+            Id = 12,
+            Email = "thomas@example.com",
+            Username = "thomast",
+            UsernameDisplay = "ThomasT",
+            Usertype = "Participant",
+            AuthVersion = 1
+        };
+        var service = CreateSignupCompletionService(
+            user, new Mock<IEmailAvailabilityService>(), out var tokenService);
+        tokenService.Setup(t => t.VerifyVerificationToken("verify-token", VerificationPurpose.SignUp))
+            .ReturnsAsync(user);
+
+        await service.VerifyAsync("verify-token", SessionTransport.BrowserCookie);
+
+        user.Username.Should().Be("thomast");
+        user.UsernameDisplay.Should().Be("ThomasT");
+    }
+
+    /// <summary>
+    /// The account name is derived from Username, which ComputeOtpProof binds, and never from
+    /// UsernameDisplay, which it deliberately does not. A display that disagrees with the bound
+    /// username is therefore discarded rather than allowed to decide what account gets created.
+    /// </summary>
+    [Fact]
+    public async Task VerifyAsync_ShouldIgnoreADisplayThatDisagreesWithTheBoundUsername()
+    {
+        var user = new backend.main.features.profile.User
+        {
+            Id = 12,
+            Email = "thomas@example.com",
+            Username = "thomast",
+            UsernameDisplay = "somebodyelse",
+            Usertype = "Participant",
+            AuthVersion = 1
+        };
+        var service = CreateSignupCompletionService(
+            user, new Mock<IEmailAvailabilityService>(), out var tokenService);
+        tokenService.Setup(t => t.VerifyVerificationToken("verify-token", VerificationPurpose.SignUp))
+            .ReturnsAsync(user);
+
+        await service.VerifyAsync("verify-token", SessionTransport.BrowserCookie);
+
+        user.Username.Should().Be("thomast");
+        user.UsernameDisplay.Should().Be("thomast");
+    }
+
+    /// <summary>
+    /// A token minted before the display column existed carries none, which must still verify.
+    /// </summary>
+    [Fact]
+    public async Task VerifyAsync_ShouldAcceptATokenWithNoDisplayForm()
+    {
+        var user = new backend.main.features.profile.User
+        {
+            Id = 12,
+            Email = "thomas@example.com",
+            Username = "thomast",
+            UsernameDisplay = null,
+            Usertype = "Participant",
+            AuthVersion = 1
+        };
+        var service = CreateSignupCompletionService(
+            user, new Mock<IEmailAvailabilityService>(), out var tokenService);
+        tokenService.Setup(t => t.VerifyVerificationToken("verify-token", VerificationPurpose.SignUp))
+            .ReturnsAsync(user);
+
+        await service.VerifyAsync("verify-token", SessionTransport.BrowserCookie);
+
+        user.Username.Should().Be("thomast");
+        user.UsernameDisplay.Should().Be("thomast");
+    }
+
+    /// <summary>
     /// The signup pre-flight creates nothing, and the verify step re-checks authoritatively before
     /// inserting, so this is the one email read allowed to trust the filter.
     /// </summary>

@@ -186,7 +186,7 @@ export class StaffTabComponent implements OnInit {
   }
 
   displayName(member: ClubStaff): string {
-    return member.name || member.username || `User #${member.userId}`;
+    return member.name || member.usernameDisplay || member.username || `User #${member.userId}`;
   }
 
   initials(member: ClubStaff): string {

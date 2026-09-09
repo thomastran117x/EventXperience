@@ -39,6 +39,18 @@ public class User
     {
         get; set;
     }
+
+    /// <summary>
+    /// The username as its owner wrote it, e.g. <c>ThomasT</c>. Presentation only.
+    /// </summary>
+    /// <remarks>
+    /// Never a lookup key, never a route parameter, never compared or joined on. <c>Username</c>
+    /// owns all of that. This differs from it by letter case alone — see <c>UsernamePolicy</c>.
+    /// </remarks>
+    public string? UsernameDisplay
+    {
+        get; set;
+    }
     public DateTime? UsernameChangeAvailableAtUtc
     {
         get; set;

@@ -87,14 +87,22 @@ public sealed class SeedUsersSeeder : ISeeder
             updatedCount);
     }
 
-    private static User CreateUser(SeedUserDefinition definition, string passwordHash)
+    /// <summary>Internal for tests: the display invariant here has no other seam to check.</summary>
+    internal static User CreateUser(SeedUserDefinition definition, string passwordHash)
     {
         var now = DateTime.UtcNow;
+
+        // Both forms from one UsernameForms value, so Normalize(display) == Username holds by
+        // construction. This path inserts straight through the context rather than going via
+        // AuthUserRepository.CreateUserAsync, so it does not get that method's display repair and
+        // has to establish the invariant itself.
+        var username = UsernamePolicy.NormalizeAndValidateWithDisplay(definition.Username);
 
         return new User
         {
             Email = definition.Email,
-            Username = UsernamePolicy.NormalizeAndValidate(definition.Username),
+            Username = username.Username,
+            UsernameDisplay = username.Display,
             Name = definition.Name,
             Usertype = definition.Role,
             Password = passwordHash,
@@ -112,7 +120,8 @@ public sealed class SeedUsersSeeder : ISeeder
         };
     }
 
-    private static bool ApplyDefinition(
+    /// <summary>Internal for tests: see <see cref="CreateUser"/>.</summary>
+    internal static bool ApplyDefinition(
         User user,
         SeedUserDefinition definition,
         string defaultPassword,
@@ -121,10 +130,20 @@ public sealed class SeedUsersSeeder : ISeeder
         var changed = false;
 
         changed |= SetIfDifferent(user.Email, definition.Email, value => user.Email = value);
+
+        // Both columns move together. Updating Username alone would leave the display form of the
+        // previous name attached to the new one — for a seeded account that was renamed in-app, or
+        // after a username edit in the catalog — and the next run would then trip
+        // CK_Users_UsernameDisplay_Normalizes and abort seeding with a 23514.
+        var username = UsernamePolicy.NormalizeAndValidateWithDisplay(definition.Username);
         changed |= SetIfDifferent(
             user.Username,
-            UsernamePolicy.NormalizeAndValidate(definition.Username),
+            username.Username,
             value => user.Username = value);
+        changed |= SetIfDifferent(
+            user.UsernameDisplay,
+            username.Display,
+            value => user.UsernameDisplay = value);
         changed |= SetIfDifferent(user.Name, definition.Name, value => user.Name = value);
         changed |= SetIfDifferent(user.Usertype, definition.Role, value => user.Usertype = value);
         if (string.IsNullOrWhiteSpace(user.Password)

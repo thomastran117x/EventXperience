@@ -1,11 +1,12 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, PLATFORM_ID, computed, inject, signal } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { finalize } from 'rxjs/operators';
 import { environment } from '@environments/environment';
 import { PillComponent } from '@common/pill/pill.component';
-import { AuthService, SignupRole } from '../../services/auth.service';
+import { AuthService, SignupRole, UsernameSuggestion } from '../../services/auth.service';
 import { RecaptchaV3Service } from '../../services/recaptcha.service';
 import { getApiClientMessage } from '../../../../core/api/models/api-client-error.model';
 import { AuthReturnUrlService } from '../../services/auth-return-url.service';
@@ -17,12 +18,16 @@ import {
   normalizeUsername,
   usernameAvailabilityValidator,
 } from '../../validators/username-availability.validator';
-import { usernameFormatValidator } from '../../validators/username-format.validator';
+import {
+  toUsernameDisplay,
+  usernameFormatValidator,
+} from '../../validators/username-format.validator';
+import { UsernameSuggestionsComponent } from '../../components/username-suggestions/username-suggestions.component';
 
 @Component({
   selector: 'app-signup',
   standalone: true,
-  imports: [ReactiveFormsModule, RouterLink, PillComponent],
+  imports: [ReactiveFormsModule, RouterLink, PillComponent, UsernameSuggestionsComponent],
   templateUrl: './signup.component.html',
   styleUrls: ['./signup.component.css'],
 })
@@ -65,12 +70,21 @@ export class SignupComponent {
     usertype: this.fb.nonNullable.control<SignupRole>('participant', [Validators.required]),
   });
 
+  /** Which chip, if any, matches what is currently in the field. */
+  readonly normalizedUsername = computed(() => normalizeUsername(this.usernameValue()));
+
+  readonly suggestions = signal<UsernameSuggestion[]>([]);
+  readonly suggestionsLoading = signal(false);
+
   loading = false;
   submitted = false;
   error = '';
   success = '';
 
+  private readonly platformId = inject(PLATFORM_ID);
+
   private readonly usernameStatus = signal(this.form.controls.username.status);
+  private readonly usernameValue = signal(this.form.controls.username.value);
   private readonly emailStatus = signal(this.form.controls.email.status);
 
   readonly usernameChecking = computed(() => this.usernameStatus() === 'PENDING');
@@ -117,6 +131,9 @@ export class SignupComponent {
     this.form.controls.username.statusChanges
       .pipe(takeUntilDestroyed())
       .subscribe((status) => this.usernameStatus.set(status));
+    this.form.controls.username.valueChanges
+      .pipe(takeUntilDestroyed())
+      .subscribe((value) => this.usernameValue.set(value));
     this.form.controls.email.statusChanges
       .pipe(takeUntilDestroyed())
       .subscribe((status) => this.emailStatus.set(status));
@@ -124,6 +141,33 @@ export class SignupComponent {
 
   ngOnInit(): void {
     this.authReturnUrl.captureFromRoute(this.route);
+
+    // Browser only. On the server this would spend the 10/min/IP suggestion budget from the SSR
+    // host's single address on behalf of every visitor, and the names drawn would be replaced by
+    // the client's own fetch on hydration anyway.
+    if (isPlatformBrowser(this.platformId)) {
+      this.loadSuggestions();
+    }
+  }
+
+  loadSuggestions(): void {
+    this.suggestionsLoading.set(true);
+    this.auth
+      .getUsernameSuggestions()
+      .pipe(finalize(() => this.suggestionsLoading.set(false)))
+      .subscribe((suggestions) => this.suggestions.set(suggestions));
+  }
+
+  /**
+   * Unlike submit(), this deliberately does spend an availability probe. The setValue re-runs the
+   * async validator, which is exactly what should happen: the user has just chosen this name and
+   * wants to see it confirmed. The "never write back into the controls" note in submit() is about
+   * echoing a value the user already settled on, not about a fresh selection.
+   */
+  applySuggestion(suggestion: UsernameSuggestion): void {
+    const control = this.form.controls.username;
+    control.setValue(suggestion.display);
+    control.markAsTouched();
   }
 
   async submit(): Promise<void> {
@@ -145,7 +189,7 @@ export class SignupComponent {
       // from the rate-limit budget on every submit and leaving the fields PENDING under a form
       // that has already been submitted. The payload below carries the exact values being sent,
       // so echoing them into the inputs bought nothing.
-      const username = normalizeUsername(values.username);
+      const username = toUsernameDisplay(values.username);
       this.auth
         .signup({
           ...values,

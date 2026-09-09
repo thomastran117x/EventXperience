@@ -77,7 +77,9 @@
           <div class="min-w-0">
             <p class="truncate font-semibold text-content">{{ displayName(member) }}</p>
             <p class="truncate text-xs text-faint">
-              <ng-container *ngIf="member.username">&#64;{{ member.username }} · </ng-container>
+              <ng-container *ngIf="member.username"
+                >&#64;{{ member.usernameDisplay || member.username }} ·
+              </ng-container>
               Added {{ member.createdAt | date: 'mediumDate' }}
             </p>
           </div>

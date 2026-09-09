@@ -65,7 +65,7 @@ namespace backend.main.features.clubs.reviews
                 var user = users.GetValueOrDefault(r.UserId);
                 return new ClubReviewResponse(
                     r.Id, r.UserId, r.ClubId, r.Title, r.Rating, r.Comment, r.CreatedAt,
-                    user?.Name, user?.Username, user?.Avatar);
+                    user?.Name, user?.Username, user?.Avatar, user?.UsernameDisplay ?? user?.Username);
             });
 
             var paged = new PagedResponse<ClubReviewResponse>(items, totalCount, page, pageSize);

@@ -39,7 +39,7 @@ namespace backend.main.features.clubs.follow
                 var user = users.GetValueOrDefault(m.UserId);
                 return new ClubMemberResponse(
                     m.Id, m.UserId, m.ClubId, m.CreatedAt,
-                    user?.Name, user?.Username, user?.Avatar);
+                    user?.Name, user?.Username, user?.UsernameDisplay ?? user?.Username, user?.Avatar);
             });
 
             var paged = new PagedResponse<ClubMemberResponse>(items, totalCount, page, pageSize);

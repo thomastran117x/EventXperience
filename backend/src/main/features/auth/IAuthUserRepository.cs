@@ -21,6 +21,22 @@ namespace backend.main.features.auth
         Task<UserRecoveryRecord?> GetRecoveryByUsernameAsync(string username);
         Task<UserRecoveryRecord?> GetRecoveryByEmailAsync(string email);
         Task<bool> UsernameUnavailableAsync(string username, DateTime utcNow);
+
+        /// <summary>
+        /// The subset of <paramref name="usernames"/> already held by a user or covered by an
+        /// unexpired reservation. The batched form of <see cref="UsernameUnavailableAsync"/>,
+        /// evaluating the same two-table predicate in one round trip.
+        /// </summary>
+        /// <remarks>
+        /// One round trip is the contract, not an implementation detail: the point of this method
+        /// is to bound what a suggestion draw costs. The two tables must therefore be composed into
+        /// a single query rather than awaited one after the other — an implementation that awaits
+        /// each half doubles every call and gives back half the batching.
+        /// </remarks>
+        Task<IReadOnlySet<string>> FindUnavailableUsernamesAsync(
+            IReadOnlyCollection<string> usernames,
+            DateTime utcNow,
+            CancellationToken cancellationToken = default);
         Task<UserOAuthRecord?> GetOAuthByEmailAsync(string email);
         Task<UserOAuthRecord?> GetOAuthByMicrosoftIdAsync(string microsoftId);
         Task<UserOAuthRecord?> GetOAuthByGoogleIdAsync(string googleId);

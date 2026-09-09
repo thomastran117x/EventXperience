@@ -1,3 +1,11 @@
+import {
+  UnknownRecord,
+  asRecord,
+  readNullableString,
+  readNumber,
+  readString,
+} from './payload-casing';
+
 export interface AuthenticatedSessionResponse {
   AccessToken: string;
   ExpiresAtUtc: string;
@@ -10,55 +18,11 @@ export interface CurrentUserResponse {
   Id: number;
   Email: string;
   Username: string;
+  /** The username as its owner wrote it. Render this; resolve and link by `Username`. */
+  UsernameDisplay: string;
   Name?: string | null;
   Avatar?: string | null;
   Usertype: string;
-}
-
-type UnknownRecord = Record<string, unknown>;
-
-function asRecord(value: unknown): UnknownRecord | null {
-  return typeof value === 'object' && value !== null ? (value as UnknownRecord) : null;
-}
-
-function readString(source: UnknownRecord, ...keys: string[]): string | undefined {
-  for (const key of keys) {
-    const value = source[key];
-    if (typeof value === 'string') {
-      return value;
-    }
-  }
-
-  return undefined;
-}
-
-function readNullableString(source: UnknownRecord, ...keys: string[]): string | null | undefined {
-  for (const key of keys) {
-    const value = source[key];
-    if (typeof value === 'string' || value === null) {
-      return value;
-    }
-  }
-
-  return undefined;
-}
-
-function readNumber(source: UnknownRecord, ...keys: string[]): number | undefined {
-  for (const key of keys) {
-    const value = source[key];
-    if (typeof value === 'number' && Number.isFinite(value)) {
-      return value;
-    }
-
-    if (typeof value === 'string') {
-      const parsed = Number(value);
-      if (Number.isFinite(parsed)) {
-        return parsed;
-      }
-    }
-  }
-
-  return undefined;
 }
 
 export function normalizeAuthenticatedSessionResponse(
@@ -104,6 +68,10 @@ export function normalizeCurrentUserResponse(value: unknown): CurrentUserRespons
     return null;
   }
 
+  // Accounts created before the display column, and any payload from an older server, carry no
+  // display form; the lookup key is the correct fallback and is what used to be rendered.
+  const usernameDisplay =
+    readNullableString(source, 'UsernameDisplay', 'usernameDisplay') || username;
   const name = readNullableString(source, 'Name', 'name');
   const avatar = readNullableString(source, 'Avatar', 'avatar');
 
@@ -111,6 +79,7 @@ export function normalizeCurrentUserResponse(value: unknown): CurrentUserRespons
     Id: id,
     Email: email,
     Username: username,
+    UsernameDisplay: usernameDisplay,
     Name: name ?? undefined,
     Avatar: avatar ?? undefined,
     Usertype: usertype,

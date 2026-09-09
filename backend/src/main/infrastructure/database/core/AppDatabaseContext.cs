@@ -98,6 +98,13 @@ namespace backend.main.infrastructure.database.core
                 .Property(u => u.Username)
                 .HasColumnType("citext");
 
+            // Deliberately not citext, not indexed, not unique. UsernameDisplay is a presentation
+            // string and Username remains the sole lookup key; making this citext or indexed would
+            // invite a reader to resolve an account by it, which is the one thing it must never do.
+            modelBuilder.Entity<User>()
+                .Property(u => u.UsernameDisplay)
+                .HasMaxLength(UsernamePolicy.MaxLength);
+
             modelBuilder.Entity<User>()
                 .HasIndex(u => u.Email)
                 .IsUnique();

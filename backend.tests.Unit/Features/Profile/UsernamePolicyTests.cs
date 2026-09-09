@@ -109,4 +109,123 @@ public class UsernamePolicyTests
     {
         UsernamePolicy.IsWellFormed(normalized).Should().Be(expected);
     }
+
+    /// <summary>
+    /// Mixed case was always accepted — NormalizeAndValidate lowercases before it validates — so the
+    /// display form captures what used to be thrown away rather than relaxing a rule.
+    /// </summary>
+    [Theory]
+    [InlineData("ThomasT", "thomast", "ThomasT")]
+    [InlineData("  SmartCat23  ", "smartcat23", "SmartCat23")]
+    [InlineData("already-lower", "already-lower", "already-lower")]
+    public void NormalizeAndValidateWithDisplay_ShouldKeepTheCasingAndLowercaseTheKey(
+        string input,
+        string expectedUsername,
+        string expectedDisplay)
+    {
+        var forms = UsernamePolicy.NormalizeAndValidateWithDisplay(input);
+
+        forms.Username.Should().Be(expectedUsername);
+        forms.Display.Should().Be(expectedDisplay);
+    }
+
+    /// <summary>
+    /// The invariant every write path has to establish, and the only thing that makes a display
+    /// column safe to store beside a lookup key.
+    /// </summary>
+    [Theory]
+    [InlineData("ThomasT")]
+    [InlineData("SmartCat23")]
+    [InlineData("a.b_c-d")]
+    public void NormalizeAndValidateWithDisplay_ShouldProduceADisplayThatNormalizesToTheUsername(string input)
+    {
+        var forms = UsernamePolicy.NormalizeAndValidateWithDisplay(input);
+
+        UsernamePolicy.Normalize(forms.Display).Should().Be(forms.Username);
+        UsernamePolicy.IsValidDisplayFor(forms.Username, forms.Display).Should().BeTrue();
+    }
+
+    /// <summary>
+    /// A display differing by anything but case is a corrupt row, not a rename.
+    /// </summary>
+    [Theory]
+    [InlineData("thomast", "ThomasT", true)]
+    [InlineData("thomast", "thomast", true)]
+    [InlineData("thomast", "ThomasX", false)]
+    [InlineData("thomast", "thomas", false)]
+    [InlineData("thomast", null, false)]
+    public void IsValidDisplayFor_ShouldAllowOnlyACasingDifference(
+        string username,
+        string? display,
+        bool expected)
+    {
+        UsernamePolicy.IsValidDisplayFor(username, display).Should().Be(expected);
+    }
+
+    /// <summary>
+    /// Kept as one rule set: the older single-value method must stay a pure projection of the newer
+    /// one, or the two could drift into validating differently.
+    /// </summary>
+    [Theory]
+    [InlineData("ThomasT")]
+    [InlineData("  spaced  ")]
+    [InlineData("a-b")]
+    public void NormalizeAndValidate_ShouldAgreeWithTheDisplayForm(string input)
+    {
+        UsernamePolicy.NormalizeAndValidate(input)
+            .Should()
+            .Be(UsernamePolicy.NormalizeAndValidateWithDisplay(input).Username);
+    }
+
+    /// <summary>
+    /// The message is shown to someone whose capitals we now keep, so it must not claim otherwise.
+    /// </summary>
+    [Fact]
+    public void FormatMessage_ShouldNotClaimUsernamesAreLowercase()
+    {
+        UsernamePolicy.FormatMessage.Should().NotContain("lowercase");
+    }
+
+    /// <summary>
+    /// The hole a normalised-only check leaves open. U+212A KELVIN SIGN lowercases to an ASCII 'k',
+    /// so this value normalises to a perfectly clean "kelvin" and satisfies every rule that looks
+    /// at the normalised form — while the string that would be stored and rendered is a non-ASCII
+    /// homoglyph. Worse than cosmetic: CK_Users_UsernameDisplay_Normalizes compares PostgreSQL's
+    /// collation-dependent lower() against the key, so where it does not agree with
+    /// ToLowerInvariant the row fails the constraint and a signup becomes a 500 rather than a 400.
+    /// </summary>
+    [Theory]
+    [InlineData("Kelvin")]       // KELVIN SIGN + elvin -> "kelvin"
+    [InlineData("İstanbul")]     // LATIN CAPITAL I WITH DOT ABOVE
+    [InlineData("Admın")]        // DOTLESS I
+    [InlineData("café")]         // plainly non-ASCII
+    public void NormalizeAndValidateWithDisplay_ShouldRejectANonAsciiDisplay(string username)
+    {
+        var act = () => UsernamePolicy.NormalizeAndValidateWithDisplay(username);
+
+        act.Should().Throw<BadRequestException>().WithMessage(UsernamePolicy.FormatMessage);
+    }
+
+    [Fact]
+    public void NormalizeAndValidateWithDisplay_ShouldStillAcceptOrdinaryMixedCase()
+    {
+        var forms = UsernamePolicy.NormalizeAndValidateWithDisplay("SmartCat23");
+
+        forms.Username.Should().Be("smartcat23");
+        forms.Display.Should().Be("SmartCat23");
+    }
+
+    /// <summary>
+    /// The re-validation hook untrusted write paths depend on has to close the same hole, or a
+    /// display arriving from a cached payload or a seeder could still land a homoglyph.
+    /// </summary>
+    [Fact]
+    public void IsValidDisplayFor_ShouldRejectAHomoglyphThatNormalizesCorrectly()
+    {
+        const string homoglyph = "Kelvin";
+
+        UsernamePolicy.Normalize(homoglyph).Should().Be("kelvin");
+        UsernamePolicy.IsValidDisplayFor("kelvin", homoglyph).Should().BeFalse();
+        UsernamePolicy.IsValidDisplayFor("kelvin", "Kelvin").Should().BeTrue();
+    }
 }

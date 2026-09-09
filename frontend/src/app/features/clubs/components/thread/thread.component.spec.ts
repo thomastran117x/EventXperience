@@ -31,7 +31,7 @@ function makeItem(overrides: Partial<ThreadDisplayItem> = {}): ThreadDisplayItem
     updatedAt: '2026-08-15T12:00:00Z',
     userId: 7,
     content: 'Hello',
-    author: { id: 7, name: 'Taylor', username: 'taylor', avatar: null },
+    author: { id: 7, name: 'Taylor', username: 'taylor', usernameDisplay: 'taylor', avatar: null },
     isDeleted: false,
     likeCount: 0,
     dislikeCount: 0,
@@ -353,25 +353,31 @@ describe('ThreadComponent', () => {
     expect(component.connectionState).toBe('reconnecting');
 
     presence$.next({
-      users: [{ userId: 8, name: 'Robin', username: 'robin', avatar: null }],
+      users: [
+        { userId: 8, name: 'Robin', username: 'robin', usernameDisplay: 'robin', avatar: null },
+      ],
       totalOnline: 3,
     });
     expect(component.totalOnline).toBe(3);
     expect(component.presenceUsers.length).toBe(1);
 
-    typing$.next([{ userId: 8, name: 'Robin', username: 'robin', avatar: null }]);
+    typing$.next([
+      { userId: 8, name: 'Robin', username: 'robin', usernameDisplay: 'robin', avatar: null },
+    ]);
     expect(component.typingLabel).toBe('Robin is typing');
   });
 
   it('never lists the viewer in the typing label', () => {
     component.ngOnInit();
 
-    typing$.next([{ userId: 7, name: 'Taylor', username: 'taylor', avatar: null }]);
+    typing$.next([
+      { userId: 7, name: 'Taylor', username: 'taylor', usernameDisplay: 'taylor', avatar: null },
+    ]);
     expect(component.typingLabel).toBe('');
 
     typing$.next([
-      { userId: 7, name: 'Taylor', username: 'taylor', avatar: null },
-      { userId: 8, name: 'Robin', username: 'robin', avatar: null },
+      { userId: 7, name: 'Taylor', username: 'taylor', usernameDisplay: 'taylor', avatar: null },
+      { userId: 8, name: 'Robin', username: 'robin', usernameDisplay: 'robin', avatar: null },
     ]);
     expect(component.typingLabel).toBe('Robin is typing');
   });
@@ -380,15 +386,15 @@ describe('ThreadComponent', () => {
     component.ngOnInit();
 
     typing$.next([
-      { userId: 8, name: 'Robin', username: 'robin', avatar: null },
-      { userId: 9, name: 'Sam', username: 'sam', avatar: null },
+      { userId: 8, name: 'Robin', username: 'robin', usernameDisplay: 'robin', avatar: null },
+      { userId: 9, name: 'Sam', username: 'sam', usernameDisplay: 'sam', avatar: null },
     ]);
     expect(component.typingLabel).toBe('Robin and Sam are typing');
 
     typing$.next([
-      { userId: 8, name: 'Robin', username: 'robin', avatar: null },
-      { userId: 9, name: 'Sam', username: 'sam', avatar: null },
-      { userId: 10, name: 'Alex', username: 'alex', avatar: null },
+      { userId: 8, name: 'Robin', username: 'robin', usernameDisplay: 'robin', avatar: null },
+      { userId: 9, name: 'Sam', username: 'sam', usernameDisplay: 'sam', avatar: null },
+      { userId: 10, name: 'Alex', username: 'alex', usernameDisplay: 'alex', avatar: null },
     ]);
     expect(component.typingLabel).toBe('Several people are typing');
   });

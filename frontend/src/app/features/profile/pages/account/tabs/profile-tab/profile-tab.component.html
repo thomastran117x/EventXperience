@@ -60,8 +60,8 @@
           <div class="flex-1">
             <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <h2 class="text-2xl font-bold">{{ p.Name || p.Username }}</h2>
-                <p class="mt-1 text-sm text-subtle">&#64;{{ p.Username }}</p>
+                <h2 class="text-2xl font-bold">{{ p.Name || p.UsernameDisplay || p.Username }}</h2>
+                <p class="mt-1 text-sm text-subtle">&#64;{{ p.UsernameDisplay || p.Username }}</p>
               </div>
               <div class="flex items-center gap-3">
                 <span class="rounded-full bg-accent/10 px-3 py-1 text-xs font-semibold text-accent">
@@ -206,12 +206,16 @@
           <div>
             <h2 class="text-xl font-bold">Your sign-in username</h2>
             <p class="mt-2 text-sm text-subtle">
-              Your username is <span class="font-semibold text-content">&#64;{{ p.Username }}</span
-              >. Usernames are saved in lowercase.
+              Your username is
+              <span class="font-semibold text-content"
+                >&#64;{{ p.UsernameDisplay || p.Username }}</span
+              >. Usernames are matched case-insensitively, so ThomasT and thomast are the same
+              account.
             </p>
             <p *ngIf="!p.CanChangeUsername" class="mt-2 text-sm text-faint">
               You can change it again on
-              {{ p.UsernameChangeAvailableAtUtc | date: 'longDate' : 'UTC' }} UTC.
+              {{ p.UsernameChangeAvailableAtUtc | date: 'longDate' : 'UTC' }} UTC. Until then you
+              can still change its capitalisation, which keeps the same handle.
             </p>
             <p *ngIf="p.CanChangeUsername" class="mt-2 text-sm text-faint">
               After changing it, your username and previous handle are locked for the configured
@@ -222,10 +226,9 @@
             *ngIf="!usernameChangeRequested"
             type="button"
             (click)="startUsernameChange()"
-            [disabled]="!p.CanChangeUsername"
-            class="inline-flex flex-none items-center justify-center rounded-2xl border border-line-strong px-4 py-2 text-sm font-semibold text-muted transition hover:bg-glass-strong disabled:cursor-not-allowed disabled:opacity-50"
+            class="inline-flex flex-none items-center justify-center rounded-2xl border border-line-strong px-4 py-2 text-sm font-semibold text-muted transition hover:bg-glass-strong"
           >
-            Change username
+            {{ casingOnly ? 'Change capitalisation' : 'Change username' }}
           </button>
         </div>
 
@@ -285,6 +288,20 @@
               >
                 A username is required.
               </p>
+
+              <p *ngIf="casingOnly" class="text-sm text-muted">
+                Your cooldown is still running, so only the capitalisation can change &mdash; the
+                handle itself stays the same.
+              </p>
+
+              <app-username-suggestions
+                *ngIf="!casingOnly"
+                [suggestions]="suggestions"
+                [loading]="suggestionsLoading"
+                [selected]="normalizedUsername"
+                (pick)="applySuggestion($event)"
+                (shuffle)="loadSuggestions()"
+              />
             </div>
             <p class="text-xs leading-5 text-faint">
               You will use the new username the next time you sign in. Your old public-profile link
