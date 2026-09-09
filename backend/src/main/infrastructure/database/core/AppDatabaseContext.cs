@@ -19,6 +19,7 @@ using backend.main.features.events;
 using backend.main.features.events.favourites;
 using backend.main.features.events.images;
 using backend.main.features.events.invitations;
+using backend.main.features.events.recentlyviewed;
 using backend.main.features.events.registration;
 using backend.main.features.events.search;
 using backend.main.features.events.series;
@@ -59,6 +60,8 @@ namespace backend.main.infrastructure.database.core
         public DbSet<EventRegistration> EventRegistrations { get; set; } = null!;
         public DbSet<EventWaitlistEntry> EventWaitlistEntries { get; set; } = null!;
         public DbSet<EventFavourite> EventFavourites { get; set; } = null!;
+        public DbSet<RecentlyViewedEvent> RecentlyViewedEvents { get; set; } = null!;
+        public DbSet<RecentlyViewedSetting> RecentlyViewedSettings { get; set; } = null!;
         public DbSet<EventImage> EventImages { get; set; } = null!;
         public DbSet<EventInvitation> EventInvitations { get; set; } = null!;
         public DbSet<EventInvitationLink> EventInvitationLinks { get; set; } = null!;
@@ -836,6 +839,51 @@ namespace backend.main.infrastructure.database.core
             // idempotent under a double-tap.
             modelBuilder.Entity<EventFavourite>()
                 .HasIndex(f => new { f.EventId, f.UserId })
+                .IsUnique();
+
+            modelBuilder.Entity<RecentlyViewedEvent>()
+                .HasOne<User>()
+                .WithMany()
+                .HasForeignKey(v => v.UserId)
+                .IsRequired()
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Cascading from the event means a hard-deleted event drops out of every user's
+            // history for free, with nothing left behind to leak its former existence.
+            modelBuilder.Entity<RecentlyViewedEvent>()
+                .HasOne<Events>()
+                .WithMany()
+                .HasForeignKey(v => v.EventId)
+                .IsRequired()
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<RecentlyViewedEvent>()
+                .HasIndex(v => v.EventId);
+
+            // The hot read: one user's history, newest first. Postgres scans this backwards.
+            modelBuilder.Entity<RecentlyViewedEvent>()
+                .HasIndex(v => new { v.UserId, v.ViewedAt });
+
+            // What makes a repeat view an UPDATE rather than a second row, and what the
+            // concurrent-first-view fallback in RecentlyViewedService relies on catching.
+            modelBuilder.Entity<RecentlyViewedEvent>()
+                .HasIndex(v => new { v.UserId, v.EventId })
+                .IsUnique();
+
+            // Serves the expiry sweep, which scans purely by age across all users. Favourites
+            // has no equivalent because nothing sweeps it.
+            modelBuilder.Entity<RecentlyViewedEvent>()
+                .HasIndex(v => v.ViewedAt);
+
+            modelBuilder.Entity<RecentlyViewedSetting>()
+                .HasOne<User>()
+                .WithMany()
+                .HasForeignKey(s => s.UserId)
+                .IsRequired()
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<RecentlyViewedSetting>()
+                .HasIndex(s => s.UserId)
                 .IsUnique();
 
             modelBuilder.Entity<EventWaitlistEntry>()

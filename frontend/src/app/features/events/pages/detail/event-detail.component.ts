@@ -21,6 +21,7 @@ import { MyWaitlistStatus } from '../../models/event-waitlist.types';
 import { FeatureFlagsService } from '../../../../core/features/feature-flags.service';
 import { FEATURE_KEYS } from '../../../../core/features/feature-flags.types';
 import { EventFavouritesStore } from '../../services/event-favourites-store.service';
+import { RecentlyViewedStore } from '../../services/recently-viewed-store.service';
 import { EventFavouriteToggleComponent } from '../../components/event-favourite-toggle/event-favourite-toggle.component';
 
 @Component({
@@ -71,6 +72,7 @@ export class EventDetailComponent implements OnInit, OnDestroy {
     private fb: FormBuilder,
     private featureFlags: FeatureFlagsService,
     private favouritesStore: EventFavouritesStore,
+    private recentlyViewedStore: RecentlyViewedStore,
   ) {
     this.waitlistFeatureEnabled = this.featureFlags.isEnabled(FEATURE_KEYS.eventsWaitlist);
     this.favouritesFeatureEnabled = this.featureFlags.isEnabled(FEATURE_KEYS.eventsFavourites);
@@ -490,6 +492,13 @@ export class EventDetailComponent implements OnInit, OnDestroy {
           this.event = event;
           this.selectedImageIndex = 0;
           this.loading = false;
+
+          // Deliberately beside loadRegistrationStatus rather than inside it: that method returns
+          // early for signed-out visitors, and recording their views is the whole point of the
+          // browser-held history. Recording only after a successful fetch is also what keeps a 404
+          // or an invisible private event out of the history in the first place.
+          this.recentlyViewedStore.recordView(event.id);
+
           this.loadRegistrationStatus(event.id);
         },
         error: (response) => {

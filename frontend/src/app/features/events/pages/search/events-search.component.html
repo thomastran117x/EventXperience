@@ -278,6 +278,11 @@
         }
       </div>
 
+      <!-- Reads the shared store, so it costs no extra request on top of the results below. -->
+      <div class="mt-6">
+        <app-recently-viewed-rail [limit]="4" heading="Jump back in" />
+      </div>
+
       @if (error) {
         <div
           class="mt-6 rounded-2xl border border-danger/25 bg-danger/10 px-4 py-3 text-sm text-danger"

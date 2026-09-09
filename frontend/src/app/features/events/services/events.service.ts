@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpParams } from '@angular/common/http';
-import { map, Observable } from 'rxjs';
+import { map, Observable, of } from 'rxjs';
 import { environment } from '@environments/environment';
 import {
   ALL_CATEGORIES,
@@ -68,6 +68,30 @@ export class EventsService {
     return this.api
       .get<EventApiPayload>(`${this.base}/${eventId}`)
       .pipe(map((response) => this.normalizeEventResponse(response)));
+  }
+
+  /**
+   * Resolves a set of ids to events in one request, preserving the order asked for.
+   *
+   * Unauthenticated-safe: the endpoint applies visibility with whatever caller it can see, so ids
+   * the caller may not view simply fall out rather than erroring. That is what lets a signed-out
+   * visitor hydrate a locally-held list of ids without disclosing anything.
+   */
+  getEventsBatch(eventIds: number[]): Observable<EventItem[]> {
+    if (eventIds.length === 0) {
+      return of([]);
+    }
+
+    const httpParams = new HttpParams().set('ids', eventIds.join(','));
+
+    return this.api
+      .get<ApiEnvelope<EventItemPayload[]>>(`${this.base}/batch`, { params: httpParams })
+      .pipe(
+        map((response) => {
+          const payload = response.data ?? (response as { Data?: EventItemPayload[] }).Data ?? [];
+          return payload.map((item) => normalizeEventItem(item));
+        }),
+      );
   }
 
   getEventsByClub(

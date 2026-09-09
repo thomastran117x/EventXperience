@@ -1,0 +1,26 @@
+@if (featureEnabled && isBrowser) {
+  @if (entries$ | async; as entries) {
+    @if (entries.length) {
+      <section class="surface-card rounded-[1.75rem] p-6 sm:p-8">
+        <div class="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 class="text-xl font-semibold text-content sm:text-2xl">{{ heading }}</h2>
+            <p class="mt-1 text-sm text-subtle">Pick up where you left off.</p>
+          </div>
+          <a
+            class="text-sm font-semibold text-accent transition hover:underline"
+            routerLink="/events/me/recent"
+          >
+            See all
+          </a>
+        </div>
+
+        <div class="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          @for (entry of entries; track entry.eventId) {
+            <app-recently-viewed-card [entry]="entry" [favouritesEnabled]="favouritesEnabled" />
+          }
+        </div>
+      </section>
+    }
+  }
+}

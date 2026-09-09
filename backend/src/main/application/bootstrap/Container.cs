@@ -30,6 +30,7 @@ using backend.main.features.events.analytics;
 using backend.main.features.events.favourites;
 using backend.main.features.events.images;
 using backend.main.features.events.invitations;
+using backend.main.features.events.recentlyviewed;
 using backend.main.features.events.registration;
 using backend.main.features.events.search;
 using backend.main.features.events.series;
@@ -161,6 +162,7 @@ namespace backend.main.application.bootstrap
             services.Configure<ClubVersioningOptions>(config.GetSection("ClubVersioning"));
             services.Configure<EventVersioningOptions>(config.GetSection("EventVersioning"));
             services.Configure<OrphanBlobCleanupOptions>(config.GetSection("OrphanBlobCleanup"));
+            services.Configure<RecentlyViewedOptions>(config.GetSection("RecentlyViewed"));
             services.AddOptions<ProfileOptions>()
                 .Bind(config.GetSection("Profile"))
                 .ValidateDataAnnotations()
@@ -196,6 +198,7 @@ namespace backend.main.application.bootstrap
             services.AddRepositoryWithProxy<IEventImageRepository, EventImageRepository>();
             services.AddRepositoryWithProxy<IEventWaitlistRepository, EventWaitlistRepository>();
             services.AddRepositoryWithProxy<IEventFavouriteRepository, EventFavouriteRepository>();
+            services.AddRepositoryWithProxy<IRecentlyViewedRepository, RecentlyViewedRepository>();
 
             services.AddSingleton<IPublisher, Publisher>();
             services.AddScoped<IAuthNotificationService, AuthNotificationService>();
@@ -214,6 +217,7 @@ namespace backend.main.application.bootstrap
             services.AddScoped<IClubInvitationService, ClubInvitationService>();
             services.AddScoped<IClubMemberInvitationService, ClubMemberInvitationService>();
             services.AddScoped<ClubVersionCleanupRunner>();
+            services.AddScoped<RecentlyViewedCleanupRunner>();
             services.AddScoped<IClubReviewService, ClubReviewService>();
             services.AddScoped<IClubDiscussionService, ClubDiscussionService>();
             services.AddScoped<IClubDiscussionReplyService, ClubDiscussionReplyService>();
@@ -288,6 +292,11 @@ namespace backend.main.application.bootstrap
             else
                 services.AddScoped<IEventFavouriteService, DisabledEventFavouriteService>();
 
+            if (featureFlags.IsEnabled(FeatureFlagKeys.EventsRecentlyViewed))
+                services.AddScoped<IRecentlyViewedService, RecentlyViewedService>();
+            else
+                services.AddScoped<IRecentlyViewedService, DisabledRecentlyViewedService>();
+
             if (featureFlags.IsEnabled(FeatureFlagKeys.EventsWaitlist))
             {
                 services.AddScoped<IEventWaitlistService, EventWaitlistService>();
@@ -323,6 +332,9 @@ namespace backend.main.application.bootstrap
 
                 if (featureFlags.IsEnabled(FeatureFlagKeys.ClubsVersioning))
                     services.AddHostedService<ClubVersionCleanupService>();
+
+                if (featureFlags.IsEnabled(FeatureFlagKeys.EventsRecentlyViewed))
+                    services.AddHostedService<RecentlyViewedCleanupService>();
 
                 if (featureFlags.IsEnabled(FeatureFlagKeys.EventsInvitations))
                     services.AddHostedService<EventInvitationStatusConsumer>();

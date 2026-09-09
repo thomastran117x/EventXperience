@@ -18,6 +18,11 @@ export const ACCOUNT_ROUTES: Routes = [
       import('./tabs/password-tab/password-tab.component').then((m) => m.PasswordTabComponent),
   },
   {
+    path: 'privacy',
+    loadComponent: () =>
+      import('./tabs/privacy-tab/privacy-tab.component').then((m) => m.PrivacyTabComponent),
+  },
+  {
     path: 'danger',
     loadComponent: () =>
       import('./tabs/danger-zone-tab/danger-zone-tab.component').then(

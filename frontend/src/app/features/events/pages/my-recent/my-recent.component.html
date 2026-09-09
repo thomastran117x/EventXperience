@@ -1,0 +1,130 @@
+<div class="page-section flex flex-col gap-6">
+  <header class="flex flex-col gap-4">
+    <div class="flex flex-wrap items-end justify-between gap-4">
+      <div>
+        <h1 class="text-2xl font-semibold text-content sm:text-3xl">Recently viewed</h1>
+        <p class="mt-1 text-sm text-subtle">
+          The last {{ maxItems }} events you opened, newest first. Entries older than
+          {{ retentionDays }} days are removed automatically.
+        </p>
+      </div>
+
+      <a class="text-sm font-semibold text-accent transition hover:underline" routerLink="/events">
+        Browse events
+      </a>
+    </div>
+
+    @if (!isSignedIn) {
+      <p class="rounded-2xl border border-line bg-surface-muted px-4 py-3 text-sm text-subtle">
+        You are not signed in, so this history is kept in this browser only.
+        <a class="font-semibold text-accent hover:underline" routerLink="/auth/login">Sign in</a>
+        to sync it across your devices.
+      </p>
+    }
+  </header>
+
+  @if (error) {
+    <p class="rounded-2xl border border-danger/40 bg-danger/10 px-4 py-3 text-sm text-danger">
+      {{ error }}
+    </p>
+  }
+
+  @if (!isSignedIn) {
+    <section class="surface-card flex flex-wrap items-center justify-between gap-4 rounded-2xl p-5">
+      <div>
+        <h2 class="text-sm font-semibold text-content">Track events I view</h2>
+        <p id="anon-tracking-help" class="mt-1 text-xs text-subtle">
+          Turning this off stops new events being added. It does not delete what is already here.
+        </p>
+      </div>
+      <app-toggle-switch
+        label="Track events I view"
+        describedBy="anon-tracking-help"
+        [checked]="trackingEnabled"
+        (checkedChange)="setTracking($event)"
+      />
+    </section>
+  }
+
+  @if (loading) {
+    <p class="text-sm text-subtle">Loading your recently viewed events&hellip;</p>
+  } @else if (!trackingEnabled) {
+    <div class="surface-card rounded-3xl p-10 text-center">
+      <h2 class="text-base font-semibold text-content">View tracking is off</h2>
+      <p class="mx-auto mt-2 max-w-md text-sm text-subtle">
+        Turn it back on to start recording the events you open again.
+      </p>
+    </div>
+  } @else if (!entries.length) {
+    <div class="surface-card rounded-3xl p-10 text-center">
+      <h2 class="text-base font-semibold text-content">Nothing here yet</h2>
+      <p class="mx-auto mt-2 max-w-md text-sm text-subtle">
+        Events you open will show up here so you can find your way back to them.
+      </p>
+      <a
+        class="mt-4 inline-flex rounded-full bg-accent px-4 py-2 text-sm font-semibold text-on-accent transition hover:opacity-90"
+        routerLink="/events"
+      >
+        Find events
+      </a>
+    </div>
+  } @else {
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <p class="text-sm text-subtle">
+        {{ entries.length }} event{{ entries.length === 1 ? '' : 's' }}
+      </p>
+
+      <div class="flex flex-wrap items-center gap-2">
+        @if (selectMode) {
+          <button
+            type="button"
+            class="rounded-full border border-line px-3.5 py-1.5 text-sm font-semibold text-subtle transition hover:border-line-strong hover:text-content"
+            (click)="toggleSelectAll()"
+          >
+            {{ allSelected ? 'Select none' : 'Select all' }}
+          </button>
+
+          <button
+            type="button"
+            class="rounded-full bg-danger px-3.5 py-1.5 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            [disabled]="selectedCount === 0"
+            (click)="removeSelected()"
+          >
+            Remove selected ({{ selectedCount }})
+          </button>
+        }
+
+        <button
+          type="button"
+          class="rounded-full border border-line px-3.5 py-1.5 text-sm font-semibold text-subtle transition hover:border-line-strong hover:text-content"
+          (click)="toggleSelectMode()"
+        >
+          {{ selectMode ? 'Done' : 'Select' }}
+        </button>
+
+        <button
+          type="button"
+          class="rounded-full border border-line px-3.5 py-1.5 text-sm font-semibold text-danger transition hover:border-danger/60"
+          (click)="clearAll()"
+        >
+          Clear history
+        </button>
+      </div>
+    </div>
+
+    <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      @for (entry of entries; track entry.eventId) {
+        <app-recently-viewed-card
+          [entry]="entry"
+          [selectable]="selectMode"
+          [selected]="isSelected(entry.eventId)"
+          [showRemove]="!selectMode"
+          [favouritesEnabled]="favouritesEnabled"
+          (selectedChange)="setSelected(entry.eventId, $event)"
+          (removed)="removeOne($event)"
+          (favouriteFailed)="onFavouriteFailed($event)"
+        />
+      }
+    </div>
+  }
+</div>

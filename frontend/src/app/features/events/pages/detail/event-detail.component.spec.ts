@@ -9,6 +9,7 @@ import { EventApiResponse } from '../../models/event.types';
 import { EventRegistrationService } from '../../services/event-registration.service';
 import { EventWaitlistService } from '../../services/event-waitlist.service';
 import { EventFavouritesStore } from '../../services/event-favourites-store.service';
+import { RecentlyViewedStore } from '../../services/recently-viewed-store.service';
 import { FeatureFlagsService } from '../../../../core/features/feature-flags.service';
 import {
   ApiClientClientError,
@@ -49,6 +50,7 @@ describe('EventDetailComponent', () => {
   let waitlistService: jasmine.SpyObj<EventWaitlistService>;
   let router: jasmine.SpyObj<Router>;
   let favouritesStore: jasmine.SpyObj<EventFavouritesStore>;
+  let recentlyViewedStore: jasmine.SpyObj<RecentlyViewedStore>;
   let favourited$: BehaviorSubject<boolean>;
   // Most specs here predate auth-aware behaviour and assumed a signed-out user; the
   // waitlist states need a signed-in one, so it is overridable per test.
@@ -134,6 +136,9 @@ describe('EventDetailComponent', () => {
       ['ensureLoaded', 'toggle', 'isFavourited$'],
       { isSignedIn: true },
     );
+    recentlyViewedStore = jasmine.createSpyObj<RecentlyViewedStore>('RecentlyViewedStore', [
+      'recordView',
+    ]);
     favouritesStore.isFavourited$.and.returnValue(favourited$.asObservable());
     favouritesStore.toggle.and.returnValue(of(true));
 
@@ -151,6 +156,7 @@ describe('EventDetailComponent', () => {
         { provide: Router, useValue: router },
         { provide: Store, useValue: { select: () => of(signedInUser) } },
         { provide: EventFavouritesStore, useValue: favouritesStore },
+        { provide: RecentlyViewedStore, useValue: recentlyViewedStore },
       ],
     }).compileComponents();
   });
@@ -728,6 +734,55 @@ describe('EventDetailComponent', () => {
       component.onFavouriteFailed(new ApiClientServerError(GENERIC_API_ERROR_MESSAGE, 500));
 
       expect(component.favouriteError).toBe(GENERIC_API_ERROR_MESSAGE);
+    });
+  });
+  describe('recording the view', () => {
+    it('records once the event has loaded', () => {
+      signedInUser = { Id: 7 };
+      createComponent();
+
+      expect(recentlyViewedStore.recordView).toHaveBeenCalledOnceWith(42);
+    });
+
+    it('records for a signed-out visitor too', () => {
+      signedInUser = null;
+      createComponent();
+
+      // The browser-held history is the whole point of recording anonymously, so this must not
+      // sit behind the signed-in branch that gates registration and favourite state.
+      expect(recentlyViewedStore.recordView).toHaveBeenCalledOnceWith(42);
+    });
+
+    it('records nothing when the event fails to load', () => {
+      eventsService.getEvent.and.returnValue(
+        throwError(() => new ApiClientServerError('boom', 500)),
+      );
+
+      createComponent();
+
+      // Recording only after a successful fetch is what keeps a 404 or an invisible private
+      // event out of the history in the first place.
+      expect(recentlyViewedStore.recordView).not.toHaveBeenCalled();
+    });
+
+    it('records nothing when the payload is empty', () => {
+      eventsService.getEvent.and.returnValue(of({ ...response, data: null }));
+
+      createComponent();
+
+      expect(recentlyViewedStore.recordView).not.toHaveBeenCalled();
+    });
+
+    it('records the new event when the route changes', () => {
+      createComponent();
+      recentlyViewedStore.recordView.calls.reset();
+
+      eventsService.getEvent.and.returnValue(
+        of({ ...response, data: { ...response.data!, id: 99 } }),
+      );
+      route.setParamMap({ eventId: '99' });
+
+      expect(recentlyViewedStore.recordView).toHaveBeenCalledOnceWith(99);
     });
   });
 });

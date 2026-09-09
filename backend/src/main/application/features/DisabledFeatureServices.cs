@@ -8,6 +8,9 @@ using backend.main.features.events.favourites;
 using backend.main.features.events.favourites.contracts.responses;
 using backend.main.features.events.invitations;
 using backend.main.features.events.invitations.contracts.responses;
+using backend.main.features.events.recentlyviewed;
+using backend.main.features.events.recentlyviewed.contracts.requests;
+using backend.main.features.events.recentlyviewed.contracts.responses;
 using backend.main.features.events.registration;
 using backend.main.features.events.registration.contracts.requests;
 using backend.main.features.events.registration.contracts.responses;
@@ -82,6 +85,18 @@ public sealed class DisabledEventFavouriteService : IEventFavouriteService
     public Task<EventFavouriteResponse> GetMyStatusAsync(int eventId, int userId) => Task.FromException<EventFavouriteResponse>(DisabledFeatureErrors.Create(FeatureFlagKeys.EventsFavourites));
     public Task<IReadOnlyList<int>> GetFavouriteEventIdsAsync(int userId) => Task.FromException<IReadOnlyList<int>>(DisabledFeatureErrors.Create(FeatureFlagKeys.EventsFavourites));
     public Task<IReadOnlyList<PinnedEventResponse>> GetMyPinnedAsync(int userId, string userRole) => Task.FromException<IReadOnlyList<PinnedEventResponse>>(DisabledFeatureErrors.Create(FeatureFlagKeys.EventsFavourites));
+}
+
+public sealed class DisabledRecentlyViewedService : IRecentlyViewedService
+{
+    public Task<RecordEventViewResponse> RecordViewAsync(int eventId, int userId, string userRole) => Task.FromException<RecordEventViewResponse>(DisabledFeatureErrors.Create(FeatureFlagKeys.EventsRecentlyViewed));
+    public Task<IReadOnlyList<RecentlyViewedEventResponse>> GetMyRecentlyViewedAsync(int userId, string userRole) => Task.FromException<IReadOnlyList<RecentlyViewedEventResponse>>(DisabledFeatureErrors.Create(FeatureFlagKeys.EventsRecentlyViewed));
+    public Task<bool> RemoveAsync(int eventId, int userId) => Task.FromException<bool>(DisabledFeatureErrors.Create(FeatureFlagKeys.EventsRecentlyViewed));
+    public Task<int> RemoveManyAsync(IEnumerable<int> eventIds, int userId) => Task.FromException<int>(DisabledFeatureErrors.Create(FeatureFlagKeys.EventsRecentlyViewed));
+    public Task<int> ClearAsync(int userId) => Task.FromException<int>(DisabledFeatureErrors.Create(FeatureFlagKeys.EventsRecentlyViewed));
+    public Task<RecentlyViewedMergeResultResponse> MergeAsync(MergeRecentlyViewedRequest request, int userId, string userRole) => Task.FromException<RecentlyViewedMergeResultResponse>(DisabledFeatureErrors.Create(FeatureFlagKeys.EventsRecentlyViewed));
+    public Task<RecentlyViewedSettingsResponse> GetSettingsAsync(int userId) => Task.FromException<RecentlyViewedSettingsResponse>(DisabledFeatureErrors.Create(FeatureFlagKeys.EventsRecentlyViewed));
+    public Task<RecentlyViewedSettingsResponse> UpdateSettingsAsync(bool enabled, int userId) => Task.FromException<RecentlyViewedSettingsResponse>(DisabledFeatureErrors.Create(FeatureFlagKeys.EventsRecentlyViewed));
 }
 
 public sealed class DisabledEventWaitlistService : IEventWaitlistService

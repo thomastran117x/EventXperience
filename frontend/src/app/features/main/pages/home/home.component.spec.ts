@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 
 import { environment } from '@environments/environment';
+import { provideTestStore } from '@testing';
 
 import { HomeComponent } from './home.component';
 
@@ -21,7 +22,7 @@ describe('HomeComponent', () => {
 
     await TestBed.configureTestingModule({
       imports: [HomeComponent],
-      providers: [provideRouter([])],
+      providers: [provideRouter([]), ...provideTestStore()],
     }).compileComponents();
 
     const fixture = TestBed.createComponent(HomeComponent);
@@ -35,5 +36,22 @@ describe('HomeComponent', () => {
     expect(
       element.querySelector('input[placeholder="Search artists, teams, venues..."]'),
     ).toBeNull();
+  });
+
+  it('shows no recently viewed rail until there is a history', async () => {
+    environment.featureFlags = { auth: true, events: true, 'events.recentlyviewed': true };
+
+    await TestBed.configureTestingModule({
+      imports: [HomeComponent],
+      providers: [provideRouter([]), ...provideTestStore()],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(HomeComponent);
+    fixture.detectChanges();
+
+    // The rail renders itself away when empty, so a first-time visitor sees the page unchanged.
+    const rail = (fixture.nativeElement as HTMLElement).querySelector('app-recently-viewed-rail');
+    expect(rail).not.toBeNull();
+    expect(rail!.querySelector('section')).toBeNull();
   });
 });
